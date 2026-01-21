@@ -1,10 +1,15 @@
 [package]
-name = "repo"
+name = "repo-cli"
 version = "0.1.0"
 edition = "2021"
-description = "Git repository summary tool with visual branch graph"
-authors = ["knrs"]
+description = "A minimal git summary for your terminal"
+authors = ["K-NRS"]
 license = "MIT"
+repository = "https://github.com/K-NRS/repo-cli"
+
+[[bin]]
+name = "repo"
+path = "src/main.rs"
 
 [dependencies]
 git2 = "0.18"

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 
-use repo::git::{gather_summary, open_repo};
-use repo::render::{render_static, run_tui};
+use repo_cli::git::{gather_summary, open_repo};
+use repo_cli::render::{render_static, run_tui};
 
 #[derive(Parser, Debug)]
 #[command(name = "repo")]
