@@ -1,0 +1,16 @@
+[package]
+name = "repo"
+version = "0.1.0"
+edition = "2021"
+description = "Git repository summary tool with visual branch graph"
+authors = ["knrs"]
+license = "MIT"
+
+[dependencies]
+git2 = "0.18"
+ratatui = "0.25"
+crossterm = "0.27"
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+chrono = "0.4"
+anyhow = "1"
