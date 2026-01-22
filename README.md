@@ -36,6 +36,41 @@ repo -n 10        # last 10 commits
 repo /path/to/repo
 ```
 
+## Commit (AI-powered)
+
+Generate commit messages using AI (claude/codex/gemini).
+
+```bash
+repo commit                  # auto-detect AI, interactive
+repo commit --ai claude      # use specific provider
+repo commit --no-interactive # commit directly, skip review
+```
+
+**Flow:**
+```
+? 32 unstaged file(s). Stage all? [Y/n] l=list d=diff
+✓ Staged all changes
+● Generating commit message with claude...
+
+──────────────────────────────────────────────────
+  feat(auth): add JWT validation middleware
+──────────────────────────────────────────────────
+
+? Commit? [y/N] e=edit r=regen d=diff
+```
+
+**Keys:**
+- `y` - commit
+- `n` - cancel
+- `e` - open TUI editor
+- `r` - regenerate (with style options: concise/longer/shorter/detailed/custom)
+- `d` - view diff
+
+**Config** (`~/.config/repo/config.toml`):
+```toml
+default_ai = "claude"
+```
+
 ## Options
 
 ```
