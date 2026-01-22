@@ -100,12 +100,14 @@ fn render_recent_commits(summary: &RepoSummary) {
     for commit in &summary.recent_commits {
         let time = format_relative_time(&commit.time);
         let time_padded = format!("{:>4}", time);
+        let author_short = commit.author.split_whitespace().next().unwrap_or(&commit.author);
 
         println!(
-            "   {} {}  {}",
+            "   {} {}  {}  {}",
             "●".yellow(),
             time_padded.dimmed(),
-            truncate(&commit.message, 50)
+            truncate(&commit.message, 50),
+            author_short.dimmed()
         );
     }
 }
@@ -116,12 +118,14 @@ fn render_remote_branches(summary: &RepoSummary) {
     for branch in summary.remote_branches.iter().take(5) {
         let time = format_relative_time(&branch.last_commit_time);
         let time_padded = format!("{:>4}", time);
+        let author_short = branch.last_commit_author.split_whitespace().next().unwrap_or(&branch.last_commit_author);
 
         println!(
-            "   {:<25} {}  \"{}\"",
+            "   {:<25} {}  \"{}\"  {}",
             branch.name.blue(),
             time_padded.dimmed(),
-            truncate(&branch.last_commit_message, 30)
+            truncate(&branch.last_commit_message, 30),
+            author_short.dimmed()
         );
     }
 
