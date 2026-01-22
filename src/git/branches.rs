@@ -100,17 +100,18 @@ pub fn get_remote_branches(repo: &Repository) -> Result<Vec<RemoteBranchInfo>> {
         };
 
         // Get last commit info
-        let (last_commit_time, last_commit_message) = if let Some(oid) = branch.get().target() {
+        let (last_commit_time, last_commit_message, last_commit_author) = if let Some(oid) = branch.get().target() {
             if let Ok(commit) = repo.find_commit(oid) {
                 let time = commit.time();
                 let dt = Local.timestamp_opt(time.seconds(), 0).single().unwrap_or_else(Local::now);
                 let msg = commit.summary().unwrap_or("").to_string();
-                (dt, msg)
+                let author = commit.author().name().unwrap_or("").to_string();
+                (dt, msg, author)
             } else {
-                (Local::now(), String::new())
+                (Local::now(), String::new(), String::new())
             }
         } else {
-            (Local::now(), String::new())
+            (Local::now(), String::new(), String::new())
         };
 
         branches.push(RemoteBranchInfo {
@@ -119,6 +120,7 @@ pub fn get_remote_branches(repo: &Repository) -> Result<Vec<RemoteBranchInfo>> {
             short_name,
             last_commit_time,
             last_commit_message,
+            last_commit_author,
         });
     }
 

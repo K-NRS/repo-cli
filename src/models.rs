@@ -62,6 +62,7 @@ pub struct RemoteBranchInfo {
     pub short_name: String,
     pub last_commit_time: DateTime<Local>,
     pub last_commit_message: String,
+    pub last_commit_author: String,
 }
 
 #[derive(Debug, Clone)]
