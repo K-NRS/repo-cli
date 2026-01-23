@@ -10,6 +10,8 @@ pub struct RepoSummary {
     pub remote_branches: Vec<RemoteBranchInfo>,
     pub stashes: Vec<StashInfo>,
     pub graph: Option<BranchGraph>,
+    pub github_stars: Option<u32>,
+    pub github_forks: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

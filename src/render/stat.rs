@@ -57,6 +57,16 @@ fn render_header(summary: &RepoSummary) {
         }
     }
 
+    if summary.github_stars.is_some() || summary.github_forks.is_some() {
+        print!(" ");
+        if let Some(stars) = summary.github_stars {
+            print!(" {}{}", "★".yellow(), stars);
+        }
+        if let Some(forks) = summary.github_forks {
+            print!(" {}{}", "⑂".dimmed(), forks);
+        }
+    }
+
     println!();
 }
 
