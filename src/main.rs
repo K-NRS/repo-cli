@@ -67,6 +67,22 @@ enum Command {
 
     /// List forks of this repository
     Forks,
+
+    /// Initialize auto-release workflow for a project
+    Init {
+        /// Target project path (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
+
+        /// Project type (auto-detected if not specified)
+        /// Options: rust, bun, pnpm, nextjs, nodejs, react-native, xcode, go, python, generic
+        #[arg(long)]
+        lang: Option<String>,
+
+        /// Overwrite existing workflow without prompting
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -80,6 +96,7 @@ fn main() -> Result<()> {
         Some(Command::Release { version, draft }) => run_release_command(&version, draft),
         Some(Command::Stars) => run_stars_command(cli.path),
         Some(Command::Forks) => run_forks_command(cli.path),
+        Some(Command::Init { path, lang, force }) => run_init_command(&path, lang, force),
         None => run_summary_command(&cli),
     }
 }
@@ -171,6 +188,10 @@ fn run_stars_command(path: Option<String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn run_init_command(path: &str, lang: Option<String>, force: bool) -> Result<()> {
+    repo_cli::run_init(path, lang, force)
 }
 
 fn run_forks_command(path: Option<String>) -> Result<()> {
