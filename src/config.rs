@@ -13,6 +13,10 @@ pub struct Config {
 
     #[serde(default)]
     pub commit_style: Option<String>,
+
+    /// Automatically fetch from remotes before showing summary
+    #[serde(default)]
+    pub auto_fetch: bool,
 }
 
 fn default_true() -> bool {
@@ -25,6 +29,7 @@ impl Default for Config {
             default_ai: None,
             show_github_stats: true,
             commit_style: None,
+            auto_fetch: false,
         }
     }
 }

@@ -3,13 +3,13 @@ use colored::Colorize;
 use crate::models::{format_relative_time, RepoSummary};
 use crate::render::graph::render_simple_graph;
 
-pub fn render_static(summary: &RepoSummary, show_graph: bool, use_color: bool) {
+pub fn render_static(summary: &RepoSummary, show_graph: bool, use_color: bool, show_stashes: bool) {
     if !use_color {
         colored::control::set_override(false);
     }
 
     render_header(summary);
-    render_status(summary);
+    render_status(summary, !show_stashes);
     println!();
     render_recent_commits(summary);
 
@@ -23,7 +23,7 @@ pub fn render_static(summary: &RepoSummary, show_graph: bool, use_color: bool) {
         render_remote_branches(summary);
     }
 
-    if !summary.stashes.is_empty() {
+    if show_stashes && !summary.stashes.is_empty() {
         println!();
         render_stashes(summary);
     }
@@ -70,10 +70,11 @@ fn render_header(summary: &RepoSummary) {
     println!();
 }
 
-fn render_status(summary: &RepoSummary) {
+fn render_status(summary: &RepoSummary, show_stash_count: bool) {
     let status = &summary.status;
+    let stash_count = summary.stashes.len();
 
-    if status.is_clean() {
+    if status.is_clean() && stash_count == 0 {
         println!("   {}", "working tree clean".dimmed());
         return;
     }
@@ -101,7 +102,15 @@ fn render_status(summary: &RepoSummary) {
         parts.push(format!("{} staged", status.staged).green().to_string());
     }
 
-    println!("   {}", parts.join(", "));
+    if show_stash_count && stash_count > 0 {
+        parts.push(format!("{} stash{}", stash_count, if stash_count == 1 { "" } else { "es" }).dimmed().to_string());
+    }
+
+    if parts.is_empty() {
+        println!("   {}", "working tree clean".dimmed());
+    } else {
+        println!("   {}", parts.join(", "));
+    }
 }
 
 fn render_recent_commits(summary: &RepoSummary) {

@@ -6,6 +6,7 @@ mod stash;
 mod diff;
 mod commit_ops;
 mod github;
+mod fetch;
 
 pub use repo::open_repo;
 pub use branches::{get_current_branch, get_local_branches, get_remote_branches};
@@ -18,6 +19,7 @@ pub use diff::{
 };
 pub use commit_ops::{create_commit, get_author_info};
 pub use github::{get_github_stats, get_stargazers, get_forks, GithubStats, Stargazer, Fork};
+pub use fetch::{fetch_all_remotes, print_fetch_warnings};
 
 use anyhow::Result;
 use git2::Repository;
