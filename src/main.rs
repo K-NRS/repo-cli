@@ -122,7 +122,8 @@ fn run_summary_command(cli: &Cli) -> Result<()> {
     };
 
     if should_fetch {
-        let warnings = fetch_all_remotes(&repo);
+        let repo_path = repo.workdir().unwrap_or_else(|| repo.path());
+        let warnings = fetch_all_remotes(repo_path);
         print_fetch_warnings(&warnings);
     }
 
