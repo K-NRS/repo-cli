@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use repo_cli::git::{gather_summary, open_repo};
+use repo_cli::config::Config;
+use repo_cli::git::{fetch_all_remotes, gather_summary, open_repo, print_fetch_warnings};
 use repo_cli::render::{render_static, run_tui};
 
 #[derive(Parser, Debug)]
@@ -26,6 +27,18 @@ struct Cli {
     /// Number of recent commits to show (default: 5)
     #[arg(short = 'n', long, default_value = "5", global = true)]
     commits: usize,
+
+    /// Fetch from remotes before showing summary
+    #[arg(long, global = true)]
+    fetch: bool,
+
+    /// Skip fetching even if auto_fetch is enabled in config
+    #[arg(long, global = true)]
+    no_fetch: bool,
+
+    /// Show stash details (only count shown by default)
+    #[arg(long, global = true)]
+    stashes: bool,
 
     /// Path to git repository (defaults to current directory)
     #[arg(value_name = "PATH", global = true)]
@@ -90,12 +103,27 @@ fn run_summary_command(cli: &Cli) -> Result<()> {
         None => open_repo(None)?,
     };
 
+    // Determine if we should fetch: CLI flags override config
+    let config = Config::load().unwrap_or_default();
+    let should_fetch = if cli.no_fetch {
+        false
+    } else if cli.fetch {
+        true
+    } else {
+        config.auto_fetch
+    };
+
+    if should_fetch {
+        let warnings = fetch_all_remotes(&repo);
+        print_fetch_warnings(&warnings);
+    }
+
     let summary = gather_summary(&mut repo, cli.commits)?;
 
     if cli.interactive {
         run_tui(summary)?;
     } else {
-        render_static(&summary, cli.graph, !cli.no_color);
+        render_static(&summary, cli.graph, !cli.no_color, cli.stashes);
     }
 
     Ok(())

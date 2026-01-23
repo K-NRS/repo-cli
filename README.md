@@ -68,11 +68,6 @@ repo commit --no-interactive # commit directly, skip review
 - `r` - regenerate (with style options: concise/longer/shorter/detailed/custom)
 - `d` - view diff
 
-**Config** (`~/.config/repo/config.toml`):
-```toml
-default_ai = "claude"
-```
-
 ## Update
 
 Check for updates and self-update.
@@ -89,6 +84,19 @@ repo update --check   # check only, no install
     --graph          show branch visualization
     --no-color       plain output
 -n, --commits <N>    commit count (default: 5)
+    --fetch          fetch remotes before summary
+    --no-fetch       skip fetch (overrides config)
+```
+
+## Config
+
+`~/.config/repo/config.toml`:
+
+```toml
+default_ai = "claude"        # AI provider for commits (claude/codex/gemini)
+show_github_stats = true     # show stars/forks in header
+auto_fetch = false           # fetch remotes on every invocation
+commit_style = "concise"     # default commit message style
 ```
 
 ## License
