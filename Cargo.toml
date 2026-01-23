@@ -22,7 +22,7 @@ anyhow = "1"
 dirs = "5"
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 semver = "1"
 indicatif = "0.17"
 flate2 = "1"
