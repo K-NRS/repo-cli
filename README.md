@@ -3,22 +3,24 @@
 A minimal git summary for your terminal.
 
 ```
-📍 ON: feature-auth (2↑ 1↓ origin)
+📍 ON: main (origin)
    3 files changed, 1 untracked
 
 RECENT
-   ●   2h  add jwt validation
-   ●   5h  setup auth routes
-   ●   1d  init feature
+   ●   2h  feat(auth): add jwt validation  Alice
+   ●   5h  setup auth routes  Bob
+   ●   1d  init feature  Alice
 
 REMOTE
-   origin/main         1d  "fix: resolve merge conflict"
-   origin/feature-ui   3d  "wip"
+   origin/main         1d  "fix: resolve merge conflict"  Alice
+   origin/feature-ui   3d  "wip"  Bob
 
 STASHES (2)
    0: WIP login form
    1: debug stuff
 ```
+
+Recent commits are shown from all local and remote branches, sorted by time.
 
 ## Install
 
@@ -69,6 +71,15 @@ repo commit --no-interactive # commit directly, skip review
 **Config** (`~/.config/repo/config.toml`):
 ```toml
 default_ai = "claude"
+```
+
+## Update
+
+Check for updates and self-update.
+
+```bash
+repo update           # check and install latest
+repo update --check   # check only, no install
 ```
 
 ## Options
