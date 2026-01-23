@@ -44,6 +44,23 @@ enum Command {
         #[arg(long)]
         no_interactive: bool,
     },
+
+    /// Check for updates and optionally self-update
+    Update {
+        /// Only check for updates without installing
+        #[arg(long)]
+        check: bool,
+    },
+
+    /// Create a GitHub release (requires gh CLI)
+    Release {
+        /// Version to release (e.g., 0.1.0 or v0.1.0)
+        version: String,
+
+        /// Create as draft release
+        #[arg(long)]
+        draft: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -53,6 +70,8 @@ fn main() -> Result<()> {
         Some(Command::Commit { ai, no_interactive }) => {
             run_commit_command(ai, no_interactive, cli.path)
         }
+        Some(Command::Update { check }) => run_update_command(check),
+        Some(Command::Release { version, draft }) => run_release_command(&version, draft),
         None => run_summary_command(&cli),
     }
 }
@@ -83,4 +102,37 @@ fn run_commit_command(ai: Option<String>, no_interactive: bool, path: Option<Str
     };
 
     run_commit_workflow(repo, ai, !no_interactive)
+}
+
+fn run_update_command(check_only: bool) -> Result<()> {
+    use colored::Colorize;
+    use repo_cli::update;
+
+    if check_only {
+        match update::check_for_update()? {
+            Some(release) => {
+                println!(
+                    "{} New version available: {} → {}",
+                    "↑".yellow(),
+                    update::CURRENT_VERSION.dimmed(),
+                    release.tag_name.green()
+                );
+                println!("  Run `repo update` to install");
+            }
+            None => {
+                println!(
+                    "{} You're running the latest version ({})",
+                    "✓".green(),
+                    update::CURRENT_VERSION
+                );
+            }
+        }
+        Ok(())
+    } else {
+        update::perform_update()
+    }
+}
+
+fn run_release_command(version: &str, draft: bool) -> Result<()> {
+    repo_cli::release::create_release(version, draft)
 }
