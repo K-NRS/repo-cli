@@ -86,6 +86,7 @@ repo update --check   # check only, no install
 -n, --commits <N>    commit count (default: 5)
     --fetch          fetch remotes before summary
     --no-fetch       skip fetch (overrides config)
+    --stashes        show stash details (count only by default)
 ```
 
 ## Config
