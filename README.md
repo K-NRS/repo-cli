@@ -82,6 +82,24 @@ repo update           # check and install latest
 repo update --check   # check only, no install
 ```
 
+## Release Standard
+
+Scaffold auto-release GitHub Actions workflow with conventional commit versioning.
+
+```bash
+repo init                    # auto-detect project type
+repo init --lang rust        # explicit type
+repo init --force            # overwrite existing
+repo init /path/to/project   # target different path
+```
+
+**Supported:** Rust, Go, Bun, pnpm, Next.js, Node.js, React Native, Xcode, Python, Generic
+
+**Generated workflow:**
+- Conventional commit parsing (feat → minor, fix → patch, breaking → major)
+- Language-specific build matrix
+- Automatic GitHub releases with changelog
+
 ## Options
 
 ```
