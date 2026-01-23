@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{Local, TimeZone};
 use git2::Repository;
 
@@ -7,12 +7,26 @@ use crate::models::CommitInfo;
 pub fn get_recent_commits(repo: &Repository, limit: usize) -> Result<Vec<CommitInfo>> {
     let mut commits = Vec::new();
 
-    let head = repo.head().context("Failed to get HEAD")?;
-    let head_oid = head.target().context("HEAD has no target")?;
-
     let mut revwalk = repo.revwalk()?;
-    revwalk.push(head_oid)?;
     revwalk.set_sorting(git2::Sort::TIME)?;
+
+    // Push all local branches
+    for branch in repo.branches(Some(git2::BranchType::Local))? {
+        if let Ok((branch, _)) = branch {
+            if let Some(oid) = branch.get().target() {
+                let _ = revwalk.push(oid);
+            }
+        }
+    }
+
+    // Push all remote branches
+    for branch in repo.branches(Some(git2::BranchType::Remote))? {
+        if let Ok((branch, _)) = branch {
+            if let Some(oid) = branch.get().target() {
+                let _ = revwalk.push(oid);
+            }
+        }
+    }
 
     for (count, oid_result) in revwalk.enumerate() {
         if count >= limit {
