@@ -12,7 +12,7 @@ name = "repo"
 path = "src/main.rs"
 
 [dependencies]
-git2 = "0.18"
+git2 = { version = "0.18", default-features = false, features = ["vendored-libgit2"] }
 ratatui = "0.25"
 crossterm = "0.27"
 clap = { version = "4", features = ["derive"] }

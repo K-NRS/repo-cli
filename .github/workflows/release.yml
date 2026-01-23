@@ -1,8 +1,9 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -19,7 +20,7 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -56,10 +57,24 @@ jobs:
           7z a ../../../repo-${{ matrix.target }}.zip repo.exe
           cd ../../..
 
-      - name: Upload Release Asset
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-${{ matrix.target }}
+          path: repo-${{ matrix.target }}.${{ matrix.archive }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            repo-${{ matrix.target }}.${{ matrix.archive }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: artifacts/**/*
+          generate_release_notes: true
