@@ -1,4 +1,3 @@
-mod config;
 pub mod tui;
 
 use std::io::{self, Write};
@@ -13,7 +12,7 @@ use crate::git::{
     get_working_tree_status, has_staged_changes, stage_all,
 };
 
-use config::Config;
+use crate::config::Config;
 use tui::{run_commit_tui, CommitApp, TuiResult};
 
 /// Main entry point for the commit workflow

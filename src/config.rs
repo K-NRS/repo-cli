@@ -3,10 +3,26 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub default_ai: Option<String>,
+
+    #[serde(default = "default_true")]
+    pub show_github_stats: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            default_ai: None,
+            show_github_stats: true,
+        }
+    }
 }
 
 impl Config {
@@ -22,9 +38,10 @@ impl Config {
         Ok(config)
     }
 
-    fn config_path() -> PathBuf {
-        dirs::config_dir()
+    pub fn config_path() -> PathBuf {
+        dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
+            .join(".config")
             .join("repo")
             .join("config.toml")
     }

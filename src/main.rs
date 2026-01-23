@@ -61,6 +61,12 @@ enum Command {
         #[arg(long)]
         draft: bool,
     },
+
+    /// List users who starred this repository
+    Stars,
+
+    /// List forks of this repository
+    Forks,
 }
 
 fn main() -> Result<()> {
@@ -72,6 +78,8 @@ fn main() -> Result<()> {
         }
         Some(Command::Update { check }) => run_update_command(check),
         Some(Command::Release { version, draft }) => run_release_command(&version, draft),
+        Some(Command::Stars) => run_stars_command(cli.path),
+        Some(Command::Forks) => run_forks_command(cli.path),
         None => run_summary_command(&cli),
     }
 }
@@ -135,4 +143,65 @@ fn run_update_command(check_only: bool) -> Result<()> {
 
 fn run_release_command(version: &str, draft: bool) -> Result<()> {
     repo_cli::release::create_release(version, draft)
+}
+
+fn run_stars_command(path: Option<String>) -> Result<()> {
+    use colored::Colorize;
+    use repo_cli::git::{get_stargazers, open_repo};
+
+    let repo = match &path {
+        Some(p) => open_repo(Some(std::path::Path::new(p)))?,
+        None => open_repo(None)?,
+    };
+
+    let stargazers = get_stargazers(&repo)?;
+
+    if stargazers.is_empty() {
+        println!("{}", "No stargazers yet".dimmed());
+        return Ok(());
+    }
+
+    println!("{} ({})", "STARGAZERS".bold(), stargazers.len());
+    for user in &stargazers {
+        println!("   {} {}", "★".yellow(), user.login);
+    }
+
+    if stargazers.len() == 100 {
+        println!("   {}", "... showing first 100".dimmed());
+    }
+
+    Ok(())
+}
+
+fn run_forks_command(path: Option<String>) -> Result<()> {
+    use colored::Colorize;
+    use repo_cli::git::{get_forks, open_repo};
+
+    let repo = match &path {
+        Some(p) => open_repo(Some(std::path::Path::new(p)))?,
+        None => open_repo(None)?,
+    };
+
+    let forks = get_forks(&repo)?;
+
+    if forks.is_empty() {
+        println!("{}", "No forks yet".dimmed());
+        return Ok(());
+    }
+
+    println!("{} ({})", "FORKS".bold(), forks.len());
+    for fork in &forks {
+        let stars_str = if fork.stars > 0 {
+            format!(" ★{}", fork.stars).yellow().to_string()
+        } else {
+            String::new()
+        };
+        println!("   {} {}{}", "⑂".dimmed(), fork.repo_name, stars_str);
+    }
+
+    if forks.len() == 100 {
+        println!("   {}", "... showing first 100".dimmed());
+    }
+
+    Ok(())
 }

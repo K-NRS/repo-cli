@@ -5,6 +5,7 @@ mod status;
 mod stash;
 mod diff;
 mod commit_ops;
+mod github;
 
 pub use repo::open_repo;
 pub use branches::{get_current_branch, get_local_branches, get_remote_branches};
@@ -16,10 +17,12 @@ pub use diff::{
     stage_all,
 };
 pub use commit_ops::{create_commit, get_author_info};
+pub use github::{get_github_stats, get_stargazers, get_forks, GithubStats, Stargazer, Fork};
 
 use anyhow::Result;
 use git2::Repository;
 
+use crate::config::Config;
 use crate::models::RepoSummary;
 
 pub fn gather_summary(repo: &mut Repository, commit_limit: usize) -> Result<RepoSummary> {
@@ -30,6 +33,13 @@ pub fn gather_summary(repo: &mut Repository, commit_limit: usize) -> Result<Repo
     let remote_branches = get_remote_branches(repo)?;
     let stashes = get_stashes(repo)?;
 
+    let config = Config::load().unwrap_or_default();
+    let github_stats = if config.show_github_stats {
+        get_github_stats(repo)
+    } else {
+        None
+    };
+
     Ok(RepoSummary {
         current_branch,
         status,
@@ -38,5 +48,7 @@ pub fn gather_summary(repo: &mut Repository, commit_limit: usize) -> Result<Repo
         remote_branches,
         stashes,
         graph: None,
+        github_stars: github_stats.as_ref().map(|s| s.stars),
+        github_forks: github_stats.as_ref().map(|s| s.forks),
     })
 }
