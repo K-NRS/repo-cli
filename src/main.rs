@@ -80,6 +80,13 @@ enum Command {
 
     /// List forks of this repository
     Forks,
+
+    /// Pull and push to sync with remote
+    Sync {
+        /// Use rebase instead of merge when pulling
+        #[arg(long)]
+        rebase: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -93,6 +100,7 @@ fn main() -> Result<()> {
         Some(Command::Release { version, draft }) => run_release_command(&version, draft),
         Some(Command::Stars) => run_stars_command(cli.path),
         Some(Command::Forks) => run_forks_command(cli.path),
+        Some(Command::Sync { rebase }) => run_sync_command(rebase, cli.path),
         None => run_summary_command(&cli),
     }
 }
@@ -231,5 +239,67 @@ fn run_forks_command(path: Option<String>) -> Result<()> {
         println!("   {}", "... showing first 100".dimmed());
     }
 
+    Ok(())
+}
+
+fn run_sync_command(rebase: bool, path: Option<String>) -> Result<()> {
+    use colored::Colorize;
+    use std::process::Command as Cmd;
+
+    let repo_path = path.as_deref().unwrap_or(".");
+
+    // Check for uncommitted changes
+    let status = Cmd::new("git")
+        .args(["-C", repo_path, "status", "--porcelain"])
+        .output()?;
+
+    if !status.stdout.is_empty() {
+        eprintln!(
+            "{} uncommitted changes, stash or commit first",
+            "⚠".yellow()
+        );
+        return Ok(());
+    }
+
+    // Pull
+    print!("{} pulling...", "↓".cyan());
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    let mut pull_args = vec!["-C", repo_path, "pull"];
+    if rebase {
+        pull_args.push("--rebase");
+    }
+
+    let pull = Cmd::new("git").args(&pull_args).output()?;
+
+    if !pull.status.success() {
+        println!(" {}", "failed".red());
+        let stderr = String::from_utf8_lossy(&pull.stderr);
+        if !stderr.is_empty() {
+            eprintln!("{}", stderr);
+        }
+        return Ok(());
+    }
+    println!(" {}", "ok".green());
+
+    // Push
+    print!("{} pushing...", "↑".cyan());
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    let push = Cmd::new("git")
+        .args(["-C", repo_path, "push"])
+        .output()?;
+
+    if !push.status.success() {
+        println!(" {}", "failed".red());
+        let stderr = String::from_utf8_lossy(&push.stderr);
+        if !stderr.is_empty() {
+            eprintln!("{}", stderr);
+        }
+        return Ok(());
+    }
+    println!(" {}", "ok".green());
+
+    println!("{} synced", "✓".green());
     Ok(())
 }

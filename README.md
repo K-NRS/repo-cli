@@ -77,6 +77,15 @@ repo update           # check and install latest
 repo update --check   # check only, no install
 ```
 
+## Sync
+
+Pull and push in one command.
+
+```bash
+repo sync             # pull then push
+repo sync --rebase    # pull --rebase then push
+```
+
 ## Options
 
 ```
