@@ -92,8 +92,11 @@ pub fn run_commit_workflow(
         }
     }
 
+    // Load config
+    let config = Config::load().unwrap_or_default();
+
     // Resolve AI provider: CLI flag > config > auto-detect
-    let provider = resolve_provider(cli_ai)?;
+    let provider = resolve_provider(cli_ai, &config)?;
 
     // Get staged diff and files
     let diff = get_staged_diff(&repo)?;
@@ -105,8 +108,9 @@ pub fn run_commit_workflow(
         provider.name().bold()
     );
 
-    // Generate initial message
-    let mut message = generate_commit_message(provider, &diff, None)?;
+    // Generate initial message with configured style
+    let style = config.commit_style.as_deref();
+    let mut message = generate_commit_message(provider, &diff, style)?;
 
     if !interactive {
         // Non-interactive: commit directly
@@ -219,7 +223,7 @@ pub fn run_commit_workflow(
     Ok(())
 }
 
-fn resolve_provider(cli_ai: Option<String>) -> Result<AiProvider> {
+fn resolve_provider(cli_ai: Option<String>, config: &Config) -> Result<AiProvider> {
     // Priority 1: CLI flag
     if let Some(ref name) = cli_ai {
         return AiProvider::from_str(name)
@@ -227,11 +231,9 @@ fn resolve_provider(cli_ai: Option<String>) -> Result<AiProvider> {
     }
 
     // Priority 2: Config file
-    if let Ok(config) = Config::load() {
-        if let Some(ref name) = config.default_ai {
-            if let Some(provider) = AiProvider::from_str(name) {
-                return Ok(provider);
-            }
+    if let Some(ref name) = config.default_ai {
+        if let Some(provider) = AiProvider::from_str(name) {
+            return Ok(provider);
         }
     }
 

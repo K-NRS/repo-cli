@@ -10,6 +10,9 @@ pub struct Config {
 
     #[serde(default = "default_true")]
     pub show_github_stats: bool,
+
+    #[serde(default)]
+    pub commit_style: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -21,6 +24,7 @@ impl Default for Config {
         Self {
             default_ai: None,
             show_github_stats: true,
+            commit_style: None,
         }
     }
 }
