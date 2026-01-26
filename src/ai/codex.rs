@@ -16,6 +16,8 @@ pub fn generate(diff: &str, style: Option<&str>) -> Result<String> {
 
     let mut child = Command::new("codex")
         .arg("-q")
+        .arg("-c")
+        .arg("history.persistence=none")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
