@@ -8,8 +8,8 @@ use git2::Repository;
 
 use crate::ai::{detect_provider, generate_commit_message, AiProvider};
 use crate::git::{
-    create_commit, get_staged_diff, get_staged_files, get_unstaged_diff, get_unstaged_files,
-    get_working_tree_status, has_staged_changes, stage_all,
+    amend_commit, create_commit, get_last_commit_message, get_staged_diff, get_staged_files,
+    get_unstaged_diff, get_unstaged_files, get_working_tree_status, has_staged_changes, stage_all,
 };
 
 use crate::config::Config;
@@ -34,15 +34,38 @@ pub fn run_commit_workflow(
     repo: Repository,
     cli_ai: Option<String>,
     interactive: bool,
+    amend: bool,
 ) -> Result<()> {
-    // Check for staged changes
-    if !has_staged_changes(&repo)? {
-        let status = get_working_tree_status(&repo)?;
-        let unstaged = status.modified + status.untracked;
+    let has_staged = has_staged_changes(&repo)?;
+    let status = get_working_tree_status(&repo)?;
+    let unstaged = status.modified + status.untracked;
 
-        if unstaged == 0 {
+    // Check if we have anything to work with
+    if !has_staged && unstaged == 0 {
+        if amend {
+            // Amend with no changes: just edit message (handled below)
+        } else {
             bail!("Nothing to commit. Working tree clean.");
         }
+    }
+
+    // Offer to stage unstaged files if nothing staged yet
+    if !has_staged && unstaged > 0 {
+        let prompt_msg = if amend {
+            format!(
+                "{} {} unstaged file(s). Add to last commit? [Y/n] {}  ",
+                "?".yellow().bold(),
+                unstaged,
+                "l=list d=diff".dimmed()
+            )
+        } else {
+            format!(
+                "{} {} unstaged file(s). Stage all? [Y/n] {}  ",
+                "?".yellow().bold(),
+                unstaged,
+                "l=list d=diff".dimmed()
+            )
+        };
 
         // Non-interactive: auto-stage all
         if !interactive {
@@ -51,66 +74,78 @@ pub fn run_commit_workflow(
         } else {
             // Interactive prompt loop
             loop {
-            print!(
-                "{} {} unstaged file(s). Stage all? [Y/n] {}  ",
-                "?".yellow().bold(),
-                unstaged,
-                "l=list d=diff".dimmed()
-            );
-            io::stdout().flush()?;
+                print!("{}", prompt_msg);
+                io::stdout().flush()?;
 
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
 
-            match input.trim().to_lowercase().as_str() {
-                "" | "y" => {
-                    stage_all(&repo)?;
-                    println!("{} Staged all changes", "✓".green());
-                    break;
-                }
-                "l" => {
-                    // List files
-                    let files = get_unstaged_files(&repo)?;
-                    println!();
-                    for (path, status) in &files {
-                        let marker = match status {
-                            '?' => "?".yellow(),
-                            'M' => "M".cyan(),
-                            'D' => "D".red(),
-                            'R' => "R".blue(),
-                            _ => " ".normal(),
-                        };
-                        println!("  {} {}", marker, path);
+                match input.trim().to_lowercase().as_str() {
+                    "" | "y" => {
+                        stage_all(&repo)?;
+                        println!("{} Staged all changes", "✓".green());
+                        break;
                     }
-                    println!();
-                }
-                "d" => {
-                    // Show diff
-                    let diff = get_unstaged_diff(&repo)?;
-                    println!();
-                    for line in diff.lines() {
-                        if line.starts_with('+') && !line.starts_with("+++") {
-                            println!("{}", line.green());
-                        } else if line.starts_with('-') && !line.starts_with("---") {
-                            println!("{}", line.red());
-                        } else if line.starts_with("@@") {
-                            println!("{}", line.cyan());
+                    "l" => {
+                        // List files
+                        let files = get_unstaged_files(&repo)?;
+                        println!();
+                        for (path, file_status) in &files {
+                            let marker = match file_status {
+                                '?' => "?".yellow(),
+                                'M' => "M".cyan(),
+                                'D' => "D".red(),
+                                'R' => "R".blue(),
+                                _ => " ".normal(),
+                            };
+                            println!("  {} {}", marker, path);
+                        }
+                        println!();
+                    }
+                    "d" => {
+                        // Show diff
+                        let diff = get_unstaged_diff(&repo)?;
+                        println!();
+                        for line in diff.lines() {
+                            if line.starts_with('+') && !line.starts_with("+++") {
+                                println!("{}", line.green());
+                            } else if line.starts_with('-') && !line.starts_with("---") {
+                                println!("{}", line.red());
+                            } else if line.starts_with("@@") {
+                                println!("{}", line.cyan());
+                            } else {
+                                println!("{}", line);
+                            }
+                        }
+                        println!();
+                    }
+                    "n" => {
+                        if amend {
+                            // For amend, 'n' means proceed without staging (edit message only)
+                            break;
                         } else {
-                            println!("{}", line);
+                            bail!("Cancelled.");
                         }
                     }
-                    println!();
-                }
-                "n" => {
-                    bail!("Cancelled.");
-                }
-                _ => {
-                    println!("  {}", "y=stage, n=cancel, l=list, d=diff".dimmed());
+                    _ => {
+                        if amend {
+                            println!("  {}", "y=stage, n=skip (edit msg only), l=list, d=diff".dimmed());
+                        } else {
+                            println!("  {}", "y=stage, n=cancel, l=list, d=diff".dimmed());
+                        }
+                    }
                 }
             }
         }
-        }
     }
+
+    // For amend mode indicator
+    let commit_fn: Box<dyn Fn(&Repository, &str) -> Result<git2::Oid>> = if amend {
+        println!("{} Amending last commit", "●".yellow());
+        Box::new(|r, m| amend_commit(r, m))
+    } else {
+        Box::new(|r, m| create_commit(r, m))
+    };
 
     // Load config
     let config = Config::load().unwrap_or_default();
@@ -122,23 +157,36 @@ pub fn run_commit_workflow(
     let diff = get_staged_diff(&repo)?;
     let staged_files = get_staged_files(&repo)?;
 
-    println!(
-        "{} Generating commit message with {}...",
-        "●".cyan(),
-        provider.name().bold()
-    );
+    // For amend: keep existing message (squash-like behavior)
+    // For new commit: generate with AI
+    let mut message = if amend {
+        let existing = get_last_commit_message(&repo)?;
+        println!(
+            "{} Keeping existing message {}",
+            "●".cyan(),
+            "(r=regenerate)".dimmed()
+        );
+        existing
+    } else {
+        println!(
+            "{} Generating commit message with {}...",
+            "●".cyan(),
+            provider.name().bold()
+        );
+        let style = config.commit_style.as_deref();
+        generate_commit_message(provider, &diff, style)?
+    };
 
-    // Generate initial message with configured style
-    let style = config.commit_style.as_deref();
-    let mut message = generate_commit_message(provider, &diff, style)?;
+    let action_word = if amend { "Amended" } else { "Committed" };
 
     if !interactive {
         // Non-interactive: commit directly
-        let oid = create_commit(&repo, &message)?;
+        let oid = commit_fn(&repo, &message)?;
         println!("{}", message.bold());
         println!(
-            "{} Committed: {}",
+            "{} {}: {}",
             "✓".green(),
+            action_word,
             &oid.to_string()[..7].dimmed()
         );
         notify_update_available();
@@ -167,10 +215,11 @@ pub fn run_commit_workflow(
 
         match input.trim().to_lowercase().as_str() {
             "y" => {
-                let oid = create_commit(&repo, &message)?;
+                let oid = commit_fn(&repo, &message)?;
                 println!(
-                    "{} Committed: {}",
+                    "{} {}: {}",
                     "✓".green(),
+                    action_word,
                     &oid.to_string()[..7].dimmed()
                 );
                 notify_update_available();
@@ -183,10 +232,11 @@ pub fn run_commit_workflow(
 
                 match result {
                     TuiResult::Commit => {
-                        let oid = create_commit(&repo, &final_message)?;
+                        let oid = commit_fn(&repo, &final_message)?;
                         println!(
-                            "{} Committed: {}",
+                            "{} {}: {}",
                             "✓".green(),
+                            action_word,
                             &oid.to_string()[..7].dimmed()
                         );
                         notify_update_available();
@@ -199,6 +249,12 @@ pub fn run_commit_workflow(
                 }
             }
             "r" => {
+                // Can't regenerate without a diff
+                if diff.is_empty() {
+                    println!("  {} No staged changes to regenerate from", "!".yellow());
+                    continue;
+                }
+
                 // Regeneration sub-prompt
                 print!(
                     "  {} Style: {} or custom instruction: ",
@@ -223,6 +279,10 @@ pub fn run_commit_workflow(
                 message = generate_commit_message(provider, &diff, style)?;
             }
             "d" => {
+                if diff.is_empty() {
+                    println!("  {} No staged changes", "!".yellow());
+                    continue;
+                }
                 println!();
                 for line in diff.lines() {
                     if line.starts_with('+') && !line.starts_with("+++") {

@@ -56,6 +56,10 @@ enum Command {
         /// Commit directly without interactive TUI
         #[arg(short = 'y', long)]
         no_interactive: bool,
+
+        /// Amend the last commit instead of creating a new one
+        #[arg(long)]
+        amend: bool,
     },
 
     /// Quick commit (non-interactive, alias for `commit --no-interactive`)
@@ -63,6 +67,21 @@ enum Command {
         /// AI provider to use (claude, codex, gemini)
         #[arg(long)]
         ai: Option<String>,
+
+        /// Amend the last commit instead of creating a new one
+        #[arg(long)]
+        amend: bool,
+    },
+
+    /// Interactive commit (alias for `commit`)
+    Ic {
+        /// AI provider to use (claude, codex, gemini)
+        #[arg(long)]
+        ai: Option<String>,
+
+        /// Amend the last commit instead of creating a new one
+        #[arg(long)]
+        amend: bool,
     },
 
     /// Check for updates and optionally self-update
@@ -100,10 +119,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Commit { ai, no_interactive }) => {
-            run_commit_command(ai, no_interactive, cli.path)
+        Some(Command::Commit { ai, no_interactive, amend }) => {
+            run_commit_command(ai, no_interactive, amend, cli.path)
         }
-        Some(Command::C { ai }) => run_commit_command(ai, true, cli.path),
+        Some(Command::C { ai, amend }) => run_commit_command(ai, true, amend, cli.path),
+        Some(Command::Ic { ai, amend }) => run_commit_command(ai, false, amend, cli.path),
         Some(Command::Update { check }) => run_update_command(check),
         Some(Command::Release { version, draft }) => run_release_command(&version, draft),
         Some(Command::Stars) => run_stars_command(cli.path),
@@ -146,7 +166,7 @@ fn run_summary_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn run_commit_command(ai: Option<String>, no_interactive: bool, path: Option<String>) -> Result<()> {
+fn run_commit_command(ai: Option<String>, no_interactive: bool, amend: bool, path: Option<String>) -> Result<()> {
     use repo_cli::commit::run_commit_workflow;
 
     let repo = match &path {
@@ -154,7 +174,7 @@ fn run_commit_command(ai: Option<String>, no_interactive: bool, path: Option<Str
         None => open_repo(None)?,
     };
 
-    run_commit_workflow(repo, ai, !no_interactive)
+    run_commit_workflow(repo, ai, !no_interactive, amend)
 }
 
 fn run_update_command(check_only: bool) -> Result<()> {
