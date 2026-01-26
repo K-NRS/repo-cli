@@ -30,8 +30,13 @@ pub fn run_commit_workflow(
             bail!("Nothing to commit. Working tree clean.");
         }
 
-        // Interactive prompt loop
-        loop {
+        // Non-interactive: auto-stage all
+        if !interactive {
+            stage_all(&repo)?;
+            println!("{} Staged {} file(s)", "✓".green(), unstaged);
+        } else {
+            // Interactive prompt loop
+            loop {
             print!(
                 "{} {} unstaged file(s). Stage all? [Y/n] {}  ",
                 "?".yellow().bold(),
@@ -89,6 +94,7 @@ pub fn run_commit_workflow(
                     println!("  {}", "y=stage, n=cancel, l=list, d=diff".dimmed());
                 }
             }
+        }
         }
     }
 
