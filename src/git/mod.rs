@@ -17,7 +17,7 @@ pub use diff::{
     get_staged_diff, get_staged_files, get_unstaged_diff, get_unstaged_files, has_staged_changes,
     stage_all,
 };
-pub use commit_ops::{create_commit, get_author_info};
+pub use commit_ops::{amend_commit, create_commit, get_author_info, get_last_commit_message};
 pub use github::{get_github_stats, get_stargazers, get_forks, GithubStats, Stargazer, Fork};
 pub use fetch::{fetch_all_remotes, print_fetch_warnings};
 
