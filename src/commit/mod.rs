@@ -135,11 +135,11 @@ pub fn run_commit_workflow(
     if !interactive {
         // Non-interactive: commit directly
         let oid = create_commit(&repo, &message)?;
-        println!("{}", message.dimmed());
+        println!("{}", message.bold());
         println!(
             "{} Committed: {}",
-            "✓".green().bold(),
-            &oid.to_string()[..7]
+            "✓".green(),
+            &oid.to_string()[..7].dimmed()
         );
         notify_update_available();
         return Ok(());
@@ -170,8 +170,8 @@ pub fn run_commit_workflow(
                 let oid = create_commit(&repo, &message)?;
                 println!(
                     "{} Committed: {}",
-                    "✓".green().bold(),
-                    &oid.to_string()[..7]
+                    "✓".green(),
+                    &oid.to_string()[..7].dimmed()
                 );
                 notify_update_available();
                 break;
@@ -186,8 +186,8 @@ pub fn run_commit_workflow(
                         let oid = create_commit(&repo, &final_message)?;
                         println!(
                             "{} Committed: {}",
-                            "✓".green().bold(),
-                            &oid.to_string()[..7]
+                            "✓".green(),
+                            &oid.to_string()[..7].dimmed()
                         );
                         notify_update_available();
                         break;
