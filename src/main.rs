@@ -54,8 +54,15 @@ enum Command {
         ai: Option<String>,
 
         /// Commit directly without interactive TUI
-        #[arg(long)]
+        #[arg(short = 'y', long)]
         no_interactive: bool,
+    },
+
+    /// Quick commit (non-interactive, alias for `commit --no-interactive`)
+    C {
+        /// AI provider to use (claude, codex, gemini)
+        #[arg(long)]
+        ai: Option<String>,
     },
 
     /// Check for updates and optionally self-update
@@ -96,6 +103,7 @@ fn main() -> Result<()> {
         Some(Command::Commit { ai, no_interactive }) => {
             run_commit_command(ai, no_interactive, cli.path)
         }
+        Some(Command::C { ai }) => run_commit_command(ai, true, cli.path),
         Some(Command::Update { check }) => run_update_command(check),
         Some(Command::Release { version, draft }) => run_release_command(&version, draft),
         Some(Command::Stars) => run_stars_command(cli.path),
