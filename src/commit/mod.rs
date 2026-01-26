@@ -8,8 +8,9 @@ use git2::Repository;
 
 use crate::ai::{detect_provider, generate_commit_message, AiProvider};
 use crate::git::{
-    amend_commit, create_commit, get_last_commit_message, get_staged_diff, get_staged_files,
-    get_unstaged_diff, get_unstaged_files, get_working_tree_status, has_staged_changes, stage_all,
+    amend_commit, create_commit, get_amend_diff, get_last_commit_message, get_staged_diff,
+    get_staged_files, get_unstaged_diff, get_unstaged_files, get_working_tree_status,
+    has_staged_changes, stage_all,
 };
 
 use crate::config::Config;
@@ -153,8 +154,12 @@ pub fn run_commit_workflow(
     // Resolve AI provider: CLI flag > config > auto-detect
     let provider = resolve_provider(cli_ai, &config)?;
 
-    // Get staged diff and files
-    let diff = get_staged_diff(&repo)?;
+    // Get diff: for amend use full diff (parent → index), else just staged
+    let diff = if amend {
+        get_amend_diff(&repo)?
+    } else {
+        get_staged_diff(&repo)?
+    };
     let staged_files = get_staged_files(&repo)?;
 
     // For amend: keep existing message (squash-like behavior)

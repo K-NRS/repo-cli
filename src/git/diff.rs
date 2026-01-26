@@ -116,6 +116,61 @@ pub fn get_unstaged_files(repo: &Repository) -> Result<Vec<(String, char)>> {
     Ok(files)
 }
 
+/// Get the full diff for amend: parent of HEAD → current index
+/// This shows all changes that will be in the amended commit
+pub fn get_amend_diff(repo: &Repository) -> Result<String> {
+    let head = repo.head().context("No HEAD")?;
+    let head_commit = head.peel_to_commit().context("Failed to get HEAD commit")?;
+
+    // Get parent tree (what we're comparing against)
+    let parent_tree = if head_commit.parent_count() > 0 {
+        Some(head_commit.parent(0)?.tree()?)
+    } else {
+        None // Initial commit - compare against empty tree
+    };
+
+    let index = repo.index().context("Failed to get index")?;
+
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(false);
+
+    let diff = repo
+        .diff_tree_to_index(parent_tree.as_ref(), Some(&index), Some(&mut opts))
+        .context("Failed to create diff")?;
+
+    let stats = diff.stats().context("Failed to get diff stats")?;
+    if stats.files_changed() == 0 {
+        return Ok(String::new());
+    }
+
+    let mut diff_text = String::new();
+
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let prefix = match line.origin() {
+            '+' => "+",
+            '-' => "-",
+            ' ' => " ",
+            'H' => "",
+            'F' => "",
+            'B' => "",
+            _ => "",
+        };
+
+        if !prefix.is_empty() {
+            diff_text.push_str(prefix);
+        }
+
+        if let Ok(content) = std::str::from_utf8(line.content()) {
+            diff_text.push_str(content);
+        }
+
+        true
+    })
+    .context("Failed to print diff")?;
+
+    Ok(diff_text)
+}
+
 /// Get unstaged diff (working tree vs index)
 pub fn get_unstaged_diff(repo: &Repository) -> Result<String> {
     let index = repo.index().context("Failed to get index")?;
