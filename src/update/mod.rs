@@ -86,7 +86,6 @@ pub fn perform_update() -> Result<()> {
         "✓".green(),
         release.tag_name.green()
     );
-    println!("  Restart repo to use the new version.");
 
     Ok(())
 }
