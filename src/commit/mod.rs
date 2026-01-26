@@ -13,7 +13,21 @@ use crate::git::{
 };
 
 use crate::config::Config;
+use crate::update;
 use tui::{run_commit_tui, CommitApp, TuiResult};
+
+/// Silently check for updates and print hint if available
+fn notify_update_available() {
+    // Don't fail commit if update check fails
+    if let Ok(Some(release)) = update::check_for_update() {
+        println!(
+            "\n{} Update available: {} → {} (run: repo update)",
+            "↑".yellow(),
+            update::CURRENT_VERSION.dimmed(),
+            release.tag_name.green()
+        );
+    }
+}
 
 /// Main entry point for the commit workflow
 pub fn run_commit_workflow(
@@ -127,6 +141,7 @@ pub fn run_commit_workflow(
             "✓".green().bold(),
             &oid.to_string()[..7]
         );
+        notify_update_available();
         return Ok(());
     }
 
@@ -158,6 +173,7 @@ pub fn run_commit_workflow(
                     "✓".green().bold(),
                     &oid.to_string()[..7]
                 );
+                notify_update_available();
                 break;
             }
             "e" => {
@@ -173,6 +189,7 @@ pub fn run_commit_workflow(
                             "✓".green().bold(),
                             &oid.to_string()[..7]
                         );
+                        notify_update_available();
                         break;
                     }
                     TuiResult::Cancel => {
