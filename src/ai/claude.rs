@@ -16,6 +16,7 @@ pub fn generate(diff: &str, style: Option<&str>) -> Result<String> {
 
     let mut child = Command::new("claude")
         .arg("-p")
+        .arg("--no-session-persistence")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

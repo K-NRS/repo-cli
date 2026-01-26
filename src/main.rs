@@ -113,6 +113,13 @@ enum Command {
         #[arg(long)]
         rebase: bool,
     },
+
+    /// Quick sync (alias for `sync`)
+    S {
+        /// Use rebase instead of merge when pulling
+        #[arg(long)]
+        rebase: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -129,6 +136,7 @@ fn main() -> Result<()> {
         Some(Command::Stars) => run_stars_command(cli.path),
         Some(Command::Forks) => run_forks_command(cli.path),
         Some(Command::Sync { rebase }) => run_sync_command(rebase, cli.path),
+        Some(Command::S { rebase }) => run_sync_command(rebase, cli.path),
         None => run_summary_command(&cli),
     }
 }
