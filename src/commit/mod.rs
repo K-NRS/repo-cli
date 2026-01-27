@@ -31,8 +31,9 @@ fn notify_update_available() {
 }
 
 fn print_message_box(message: &str, style: MessageBoxStyle) {
-    let width = 50;
     let lines: Vec<&str> = message.lines().collect();
+    let max_content = lines.iter().map(|l| l.len() + 4).max().unwrap_or(0);
+    let width = max_content.max(50);
 
     match style {
         MessageBoxStyle::Box => {
