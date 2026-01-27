@@ -120,6 +120,36 @@ enum Command {
         #[arg(long)]
         rebase: bool,
     },
+
+    /// Reword past commit messages via interactive rebase
+    Reword {
+        /// Auto-select last N commits
+        #[arg(long)]
+        last: Option<usize>,
+
+        /// Auto-select all displayed commits
+        #[arg(long)]
+        all: bool,
+
+        /// Number of commits to display for selection (default: 20)
+        #[arg(long, default_value = "20")]
+        count: usize,
+
+        /// Use $EDITOR instead of inline prompt
+        #[arg(long)]
+        editor: bool,
+    },
+
+    /// Surgical commit design — reword, split, squash, reorder, drop via TUI
+    Craft {
+        /// Number of commits to display (default: 20)
+        #[arg(long, default_value = "20")]
+        count: usize,
+
+        /// Pre-select last N commits
+        #[arg(long)]
+        last: Option<usize>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -137,6 +167,12 @@ fn main() -> Result<()> {
         Some(Command::Forks) => run_forks_command(cli.path),
         Some(Command::Sync { rebase }) => run_sync_command(rebase, cli.path),
         Some(Command::S { rebase }) => run_sync_command(rebase, cli.path),
+        Some(Command::Reword { last, all, count, editor }) => {
+            run_reword_command(last, all, count, editor, cli.path)
+        }
+        Some(Command::Craft { count, last }) => {
+            run_craft_command(count, last, cli.path)
+        }
         None => run_summary_command(&cli),
     }
 }
@@ -339,4 +375,32 @@ fn run_sync_command(rebase: bool, path: Option<String>) -> Result<()> {
 
     println!("{} synced", "✓".green());
     Ok(())
+}
+
+fn run_reword_command(
+    last: Option<usize>,
+    all: bool,
+    count: usize,
+    editor: bool,
+    path: Option<String>,
+) -> Result<()> {
+    use repo_cli::reword::{run_reword, RewordArgs};
+
+    let repo = match &path {
+        Some(p) => open_repo(Some(std::path::Path::new(p)))?,
+        None => open_repo(None)?,
+    };
+
+    run_reword(&repo, RewordArgs { last, all, count, editor })
+}
+
+fn run_craft_command(count: usize, last: Option<usize>, path: Option<String>) -> Result<()> {
+    use repo_cli::craft::{run_craft, CraftArgs};
+
+    let repo = match &path {
+        Some(p) => open_repo(Some(std::path::Path::new(p)))?,
+        None => open_repo(None)?,
+    };
+
+    run_craft(&repo, CraftArgs { count, last })
 }
