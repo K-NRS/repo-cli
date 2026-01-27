@@ -3,6 +3,9 @@ use std::process::Command;
 
 use super::{claude, codex, gemini};
 
+/// Max characters to send to AI providers (~8K lines ≈ safe for all providers)
+const MAX_DIFF_CHARS: usize = 40_000;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AiProvider {
     Claude,
@@ -54,15 +57,54 @@ fn is_command_available(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Truncate diff to fit AI provider limits, preserving file summary context
+fn truncate_diff(diff: &str) -> String {
+    if diff.len() <= MAX_DIFF_CHARS {
+        return diff.to_string();
+    }
+
+    // Build file summary from diff headers
+    let files: Vec<&str> = diff
+        .lines()
+        .filter(|l| l.starts_with("diff --git") || l.starts_with("+++ ") || l.starts_with("--- "))
+        .collect();
+
+    let summary = if files.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "[FILES CHANGED]\n{}\n\n",
+            files.join("\n")
+        )
+    };
+
+    // Truncate the detailed diff
+    let budget = MAX_DIFF_CHARS.saturating_sub(summary.len() + 80);
+    let truncated: String = diff.chars().take(budget).collect();
+
+    // Cut at last complete line
+    let cut_point = truncated.rfind('\n').unwrap_or(truncated.len());
+
+    format!(
+        "{}{}\n\n[TRUNCATED — diff was {} chars, showing first {}]",
+        summary,
+        &truncated[..cut_point],
+        diff.len(),
+        cut_point
+    )
+}
+
 /// Generate commit message using the specified provider
 pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&str>) -> Result<String> {
     if diff.is_empty() {
         bail!("No staged changes to generate commit message for");
     }
 
+    let diff = truncate_diff(diff);
+
     match provider {
-        AiProvider::Claude => claude::generate(diff, style),
-        AiProvider::Codex => codex::generate(diff, style),
-        AiProvider::Gemini => gemini::generate(diff, style),
+        AiProvider::Claude => claude::generate(&diff, style),
+        AiProvider::Codex => codex::generate(&diff, style),
+        AiProvider::Gemini => gemini::generate(&diff, style),
     }
 }
