@@ -33,7 +33,17 @@ pub fn generate(diff: &str, style: Option<&str>) -> Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Claude failed: {}", stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if stderr.trim().is_empty() {
+            if stdout.trim().is_empty() {
+                format!("exit code {}", output.status.code().unwrap_or(-1))
+            } else {
+                stdout.trim().to_string()
+            }
+        } else {
+            stderr.trim().to_string()
+        };
+        bail!("Claude failed: {}", detail);
     }
 
     let message = String::from_utf8_lossy(&output.stdout)
