@@ -77,6 +77,43 @@ repo update           # check and install latest
 repo update --check   # check only, no install
 ```
 
+## Craft
+
+Surgical commit design via full-screen TUI. Reword, split, squash, fixup, reorder, drop, and edit commits interactively.
+
+```bash
+repo craft              # TUI with last 20 commits
+repo craft --count 50   # show 50 commits
+repo craft --last 5     # pre-select last 5
+```
+
+**TUI Modes:**
+- **Commit list** — browse commits, assign actions
+- **Reword** — inline message editing
+- **Split** — assign hunks to groups, each becomes its own commit
+- **Squash** — pick a target commit to squash into
+- **Fixup** — squash keeping the older commit's message
+- **Reorder** — move commits up/down with J/K
+- **Drop** — mark commits for removal
+- **Preview** — review full rebase plan before executing
+
+**Keys (commit list):**
+- `j/k` — navigate
+- `Enter` — open action menu
+- `D` — show diff for current commit
+- `p` — preview plan
+- `q/Esc` — quit
+
+**Keys (action menu):**
+- `r` — reword
+- `s` — split
+- `q` — squash
+- `f` — fixup
+- `d` — drop
+- `m` — reorder
+- `e` — edit (stop for manual editing)
+- `x` — reset to pick
+
 ## Sync
 
 Pull and push in one command.

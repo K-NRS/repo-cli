@@ -171,6 +171,49 @@ pub fn get_amend_diff(repo: &Repository) -> Result<String> {
     Ok(diff_text)
 }
 
+/// Get the diff for a specific commit (parent tree -> commit tree)
+pub fn get_commit_diff(repo: &Repository, oid: git2::Oid) -> Result<String> {
+    let commit = repo.find_commit(oid).context("find commit")?;
+    let commit_tree = commit.tree().context("commit tree")?;
+
+    let parent_tree = if commit.parent_count() > 0 {
+        Some(commit.parent(0)?.tree()?)
+    } else {
+        None
+    };
+
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)
+        .context("diff tree to tree")?;
+
+    let mut diff_text = String::new();
+
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let prefix = match line.origin() {
+            '+' => "+",
+            '-' => "-",
+            ' ' => " ",
+            'H' => "",
+            'F' => "",
+            'B' => "",
+            _ => "",
+        };
+
+        if !prefix.is_empty() {
+            diff_text.push_str(prefix);
+        }
+
+        if let Ok(content) = std::str::from_utf8(line.content()) {
+            diff_text.push_str(content);
+        }
+
+        true
+    })
+    .context("print diff")?;
+
+    Ok(diff_text)
+}
+
 /// Get unstaged diff (working tree vs index)
 pub fn get_unstaged_diff(repo: &Repository) -> Result<String> {
     let index = repo.index().context("Failed to get index")?;
