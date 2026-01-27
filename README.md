@@ -151,12 +151,12 @@ message_box_style = "box"   # commit message display style (see below)
 
 Controls how the commit message is displayed during interactive commit:
 
-| Style | Value | Preview |
+| Style | Value | Description |
 |---|---|---|
-| Rounded box | `"box"` | `╭──╮ │ msg │ ╰──╯` |
-| Double line | `"double_line"` | `═══` separators above/below |
-| Title box | `"title_box"` | `── Commit Message ──` header |
-| Gutter | `"gutter"` | `│ msg` colored left bar |
+| Rounded box | `"box"` | Rounded border card around the message |
+| Double line | `"double_line"` | Double-line separators above and below |
+| Title box | `"title_box"` | Titled header with single-line separators |
+| Gutter | `"gutter"` | Colored left bar (blockquote style) |
 
 ## License
 
