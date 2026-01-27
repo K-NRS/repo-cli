@@ -13,7 +13,7 @@ use crate::git::{
     has_staged_changes, stage_all,
 };
 
-use crate::config::Config;
+use crate::config::{Config, MessageBoxStyle};
 use crate::update;
 use tui::{run_commit_tui, CommitApp, TuiResult};
 
@@ -27,6 +27,55 @@ fn notify_update_available() {
             update::CURRENT_VERSION.dimmed(),
             release.tag_name.green()
         );
+    }
+}
+
+fn print_message_box(message: &str, style: MessageBoxStyle) {
+    let width = 50;
+    let lines: Vec<&str> = message.lines().collect();
+
+    match style {
+        MessageBoxStyle::Box => {
+            println!("{}", format!("╭{}╮", "─".repeat(width)).dimmed());
+            for line in &lines {
+                let content = format!("  {}", line);
+                let pad = width.saturating_sub(content.len());
+                println!(
+                    "{}{}{}{}",
+                    "│".dimmed(),
+                    content,
+                    " ".repeat(pad),
+                    "│".dimmed()
+                );
+            }
+            println!("{}", format!("╰{}╯", "─".repeat(width)).dimmed());
+        }
+        MessageBoxStyle::DoubleLine => {
+            println!("{}", "═".repeat(width + 2).dimmed());
+            for line in &lines {
+                println!("  {}", line);
+            }
+            println!("{}", "═".repeat(width + 2).dimmed());
+        }
+        MessageBoxStyle::TitleBox => {
+            let title = " Commit Message ";
+            let side = (width.saturating_sub(title.len())) / 2;
+            println!(
+                "{}{}{}",
+                "─".repeat(side).dimmed(),
+                title.bold(),
+                "─".repeat(width - side - title.len()).dimmed()
+            );
+            for line in &lines {
+                println!("  {}", line);
+            }
+            println!("{}", "─".repeat(width).dimmed());
+        }
+        MessageBoxStyle::Gutter => {
+            for line in &lines {
+                println!("  {} {}", "│".cyan(), line);
+            }
+        }
     }
 }
 
@@ -201,11 +250,7 @@ pub fn run_commit_workflow(
     // Interactive: show message and prompt
     loop {
         println!();
-        println!("{}", "─".repeat(50).dimmed());
-        for line in message.lines() {
-            println!("  {}", line);
-        }
-        println!("{}", "─".repeat(50).dimmed());
+        print_message_box(&message, config.message_box_style);
         println!();
 
         print!(

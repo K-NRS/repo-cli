@@ -144,7 +144,19 @@ default_ai = "claude"        # AI provider for commits (claude/codex/gemini)
 show_github_stats = true     # show stars/forks in header
 auto_fetch = false           # fetch remotes on every invocation
 commit_style = "concise"     # default commit message style
+message_box_style = "box"   # commit message display style (see below)
 ```
+
+### Message Box Styles
+
+Controls how the commit message is displayed during interactive commit:
+
+| Style | Value | Preview |
+|---|---|---|
+| Rounded box | `"box"` | `╭──╮ │ msg │ ╰──╯` |
+| Double line | `"double_line"` | `═══` separators above/below |
+| Title box | `"title_box"` | `── Commit Message ──` header |
+| Gutter | `"gutter"` | `│ msg` colored left bar |
 
 ## License
 

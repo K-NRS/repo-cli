@@ -3,6 +3,21 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageBoxStyle {
+    Box,
+    DoubleLine,
+    TitleBox,
+    Gutter,
+}
+
+impl Default for MessageBoxStyle {
+    fn default() -> Self {
+        Self::Box
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -17,6 +32,10 @@ pub struct Config {
     /// Automatically fetch from remotes before showing summary
     #[serde(default)]
     pub auto_fetch: bool,
+
+    /// Style for commit message display: box, double_line, title_box, gutter
+    #[serde(default)]
+    pub message_box_style: MessageBoxStyle,
 }
 
 fn default_true() -> bool {
@@ -30,6 +49,7 @@ impl Default for Config {
             show_github_stats: true,
             commit_style: None,
             auto_fetch: false,
+            message_box_style: MessageBoxStyle::default(),
         }
     }
 }
