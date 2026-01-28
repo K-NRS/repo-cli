@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use git2::Repository;
 
+use crate::ai::detect_provider;
 use crate::models::CommitInfo;
 use tui::{run_craft_tui, CraftResult};
 
@@ -24,7 +25,8 @@ pub fn run_craft(repo: &Repository, args: CraftArgs) -> Result<()> {
         return Ok(());
     }
 
-    let result = run_craft_tui(commits.clone(), repo)?;
+    let ai_provider = detect_provider();
+    let result = run_craft_tui(commits.clone(), repo, ai_provider)?;
 
     match result {
         CraftResult::Execute(entries, hunks_cache) => {

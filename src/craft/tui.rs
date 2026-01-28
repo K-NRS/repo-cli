@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
+use crate::ai::{AiProvider, generate_commit_message};
 use crate::models::{format_relative_time, CommitInfo};
 use super::actions::{RebaseAction, SplitGroup, TodoEntry};
 use super::split::{get_commit_hunks, Hunk};
@@ -69,10 +70,14 @@ struct App {
 
     // status message
     status: String,
+
+    // AI provider
+    ai_provider: Option<AiProvider>,
+    ai_loading: bool,
 }
 
 impl App {
-    fn new(commits: Vec<CommitInfo>) -> Self {
+    fn new(commits: Vec<CommitInfo>, ai_provider: Option<AiProvider>) -> Self {
         let len = commits.len();
         let entries: Vec<TodoEntry> = (0..len).map(TodoEntry::pick).collect();
         Self {
@@ -97,6 +102,8 @@ impl App {
             diff_scroll: 0,
             hunks_cache: HashMap::new(),
             status: String::new(),
+            ai_provider,
+            ai_loading: false,
         }
     }
 
@@ -104,7 +111,7 @@ impl App {
         match self.mode {
             Mode::CommitList => self.handle_commit_list(code, repo),
             Mode::ActionMenu => self.handle_action_menu(code, repo),
-            Mode::RewordEdit => self.handle_reword_edit(code),
+            Mode::RewordEdit => self.handle_reword_edit(code, repo),
             Mode::SplitView => self.handle_split_view(code),
             Mode::SquashTarget => self.handle_squash_target(code),
             Mode::ReorderMode => self.handle_reorder(code, modifiers),
@@ -266,8 +273,39 @@ impl App {
     }
 
     // --- RewordEdit mode ---
-    fn handle_reword_edit(&mut self, code: KeyCode) {
+    fn handle_reword_edit(&mut self, code: KeyCode, repo: &Repository) {
         match code {
+            KeyCode::Tab => {
+                // AI generate commit message from diff
+                let Some(provider) = self.ai_provider else {
+                    self.status = "no AI provider available (install claude/codex/gemini CLI)".into();
+                    return;
+                };
+                let oid = self.commits[self.cursor].id;
+                match crate::git::get_commit_diff(repo, oid) {
+                    Ok(diff) if !diff.is_empty() => {
+                        self.ai_loading = true;
+                        self.status = format!("generating with {}...", provider.name());
+                        match generate_commit_message(provider, &diff, None) {
+                            Ok(msg) => {
+                                self.reword_buffer = msg;
+                                self.reword_cursor = self.reword_buffer.len();
+                                self.status = format!("AI message generated ({})", provider.name());
+                            }
+                            Err(e) => {
+                                self.status = format!("AI error: {}", e);
+                            }
+                        }
+                        self.ai_loading = false;
+                    }
+                    Ok(_) => {
+                        self.status = "empty diff — cannot generate message".into();
+                    }
+                    Err(e) => {
+                        self.status = format!("diff error: {}", e);
+                    }
+                }
+            }
             KeyCode::Esc => {
                 // Save reword action
                 if !self.reword_buffer.is_empty() && self.reword_buffer != self.commits[self.cursor].message {
@@ -526,12 +564,12 @@ impl App {
     }
 }
 
-pub fn run_craft_tui(commits: Vec<CommitInfo>, repo: &Repository) -> Result<CraftResult> {
+pub fn run_craft_tui(commits: Vec<CommitInfo>, repo: &Repository, ai_provider: Option<AiProvider>) -> Result<CraftResult> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-    let mut app = App::new(commits);
+    let mut app = App::new(commits, ai_provider);
 
     loop {
         terminal.draw(|f| ui(f, &app))?;
@@ -780,7 +818,7 @@ fn render_reword_editor(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Green))
-                .title(" New Message (Esc=save) "),
+                .title(" New Message (Esc=save Tab=AI) "),
         );
     f.render_widget(editor, chunks[1]);
 }
@@ -930,7 +968,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let help = match app.mode {
         Mode::CommitList => "j/k:nav  Enter:actions  D:diff  p:preview  q:quit",
         Mode::ActionMenu => "r:reword s:split q:squash f:fixup d:drop m:reorder e:edit x:reset  Esc:back",
-        Mode::RewordEdit => "type to edit  Esc:save and return",
+        Mode::RewordEdit => "type to edit  Tab:AI generate  Esc:save and return",
         Mode::SplitView if app.split_editing_msg => "type message  Esc/Enter:done",
         Mode::SplitView => "j/k:nav  space:toggle  1-9:assign  g:new group  n:name group  Enter:done",
         Mode::SquashTarget => "j/k:select target  Enter:confirm  Esc:cancel",
