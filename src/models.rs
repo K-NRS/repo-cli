@@ -12,6 +12,14 @@ pub struct RepoSummary {
     pub graph: Option<BranchGraph>,
     pub github_stars: Option<u32>,
     pub github_forks: Option<u32>,
+    pub total_commits: usize,
+    pub popular_branches: Vec<BranchCommitCount>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchCommitCount {
+    pub name: String,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone)]

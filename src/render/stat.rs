@@ -10,6 +10,7 @@ pub fn render_static(summary: &RepoSummary, show_graph: bool, use_color: bool, s
 
     render_header(summary);
     render_status(summary, !show_stashes);
+    render_stats(summary);
     println!();
     render_recent_commits(summary);
 
@@ -110,6 +111,40 @@ fn render_status(summary: &RepoSummary, show_stash_count: bool) {
         println!("   {}", "working tree clean".dimmed());
     } else {
         println!("   {}", parts.join(", "));
+    }
+}
+
+fn render_stats(summary: &RepoSummary) {
+    let mut parts = Vec::new();
+
+    // Total commits
+    parts.push(format!("{} total commit{}",
+        summary.total_commits,
+        if summary.total_commits == 1 { "" } else { "s" }
+    ));
+
+    // Total branches
+    let total_branches = summary.popular_branches.len();
+    parts.push(format!("{} branch{}",
+        total_branches,
+        if total_branches == 1 { "" } else { "es" }
+    ));
+
+    // Top branches by commit count (show top 3)
+    if !summary.popular_branches.is_empty() {
+        let top_branches: Vec<String> = summary.popular_branches
+            .iter()
+            .take(3)
+            .map(|b| format!("{} ({})", b.name.cyan(), b.count))
+            .collect();
+
+        if !top_branches.is_empty() {
+            parts.push(format!("popular: {}", top_branches.join(", ")));
+        }
+    }
+
+    if !parts.is_empty() {
+        println!("   {}", parts.join(" • ").dimmed());
     }
 }
 
