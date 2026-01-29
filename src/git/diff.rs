@@ -84,7 +84,15 @@ pub fn stage_all(repo: &Repository) -> Result<()> {
     index
         .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
         .context("Failed to add files to index")?;
-    index.write().context("Failed to write index")?;
+    index.write().map_err(|e| {
+        if e.code() == git2::ErrorCode::Locked {
+            anyhow::anyhow!(
+                "Index is locked (likely a crashed git process)\n\n  Fix: rm -f .git/index.lock"
+            )
+        } else {
+            anyhow::anyhow!("Failed to write index: {}", e)
+        }
+    })?;
     Ok(())
 }
 
