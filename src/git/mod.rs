@@ -10,7 +10,7 @@ mod fetch;
 
 pub use repo::open_repo;
 pub use branches::{get_current_branch, get_local_branches, get_remote_branches};
-pub use commits::get_recent_commits;
+pub use commits::{get_recent_commits, get_total_commit_count, get_branch_commit_counts};
 pub use status::get_working_tree_status;
 pub use stash::get_stashes;
 pub use diff::{
@@ -34,6 +34,8 @@ pub fn gather_summary(repo: &mut Repository, commit_limit: usize) -> Result<Repo
     let local_branches = get_local_branches(repo)?;
     let remote_branches = get_remote_branches(repo)?;
     let stashes = get_stashes(repo)?;
+    let total_commits = get_total_commit_count(repo)?;
+    let popular_branches = get_branch_commit_counts(repo)?;
 
     let config = Config::load().unwrap_or_default();
     let github_stats = if config.show_github_stats {
@@ -52,5 +54,7 @@ pub fn gather_summary(repo: &mut Repository, commit_limit: usize) -> Result<Repo
         graph: None,
         github_stars: github_stats.as_ref().map(|s| s.stars),
         github_forks: github_stats.as_ref().map(|s| s.forks),
+        total_commits,
+        popular_branches,
     })
 }
