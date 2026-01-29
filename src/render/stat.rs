@@ -130,8 +130,8 @@ fn render_stats(summary: &RepoSummary) {
         if total_branches == 1 { "" } else { "es" }
     ));
 
-    // Top branches by commit count (show top 3)
-    if !summary.popular_branches.is_empty() {
+    // Top branches by commit count (show top 3, only if more than 1 branch)
+    if summary.popular_branches.len() > 1 {
         let top_branches: Vec<String> = summary.popular_branches
             .iter()
             .take(3)

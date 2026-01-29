@@ -94,6 +94,27 @@ fn truncate_diff(diff: &str) -> String {
     )
 }
 
+/// Strip markdown code blocks (```) from AI output
+pub fn strip_code_blocks(text: &str) -> String {
+    let trimmed = text.trim();
+
+    // Check if wrapped in code blocks
+    if trimmed.starts_with("```") && trimmed.ends_with("```") {
+        let lines: Vec<&str> = trimmed.lines().collect();
+        if lines.len() < 3 {
+            return trimmed.to_string();
+        }
+
+        // Skip first line (``` or ```language) and last line (```)
+        lines[1..lines.len() - 1]
+            .join("\n")
+            .trim()
+            .to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Generate commit message using the specified provider
 pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&str>) -> Result<String> {
     if diff.is_empty() {
@@ -102,9 +123,55 @@ pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&
 
     let diff = truncate_diff(diff);
 
-    match provider {
+    let message = match provider {
         AiProvider::Claude => claude::generate(&diff, style),
         AiProvider::Codex => codex::generate(&diff, style),
         AiProvider::Gemini => gemini::generate(&diff, style),
+    }?;
+
+    Ok(strip_code_blocks(&message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_code_blocks() {
+        // Plain text - no changes
+        assert_eq!(
+            strip_code_blocks("fix(auth): handle null session"),
+            "fix(auth): handle null session"
+        );
+
+        // Code block without language
+        assert_eq!(
+            strip_code_blocks("```\nfix(auth): handle null session\n```"),
+            "fix(auth): handle null session"
+        );
+
+        // Code block with language
+        assert_eq!(
+            strip_code_blocks("```text\nfix(auth): handle null session\n```"),
+            "fix(auth): handle null session"
+        );
+
+        // Multiline commit message
+        assert_eq!(
+            strip_code_blocks("```\nfix(auth): handle null session\n\nPrevents crash when user logs out\n```"),
+            "fix(auth): handle null session\n\nPrevents crash when user logs out"
+        );
+
+        // Incomplete code block (only opening)
+        assert_eq!(
+            strip_code_blocks("```\nfix(auth): handle null session"),
+            "```\nfix(auth): handle null session"
+        );
+
+        // Extra whitespace
+        assert_eq!(
+            strip_code_blocks("  ```\nfix(auth): handle null session\n```  "),
+            "fix(auth): handle null session"
+        );
     }
 }
