@@ -3,8 +3,9 @@
 A minimal git summary for your terminal.
 
 ```
-📍 ON: main (origin)
+📍 ON: main (origin)  ★42 ⑂12
    3 files changed, 1 untracked
+   156 total commits • 5 branches • popular: main (142), dev (89), feature-ui (45)
 
 RECENT
    ●   2h  feat(auth): add jwt validation  Alice
