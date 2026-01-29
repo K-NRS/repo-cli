@@ -772,16 +772,27 @@ fn render_context_panel(f: &mut Frame, app: &App, area: Rect) {
     } else {
         // show commit details
         let c = &app.commits[app.cursor];
-        let details = vec![
+        let mut details = vec![
             Line::from(""),
             Line::styled(format!("  SHA: {}", c.id), Style::default().fg(Color::Yellow)),
             Line::from(format!("  Author: {}", c.author)),
             Line::from(format!("  Time: {}", format_relative_time(&c.time))),
             Line::from(""),
-            Line::from(format!("  {}", c.message)),
-            Line::from(""),
-            Line::styled("  D=show diff  Enter=actions  p=preview plan", Style::default().fg(Color::DarkGray)),
         ];
+
+        // Show reworded message if there's a reword action
+        if let RebaseAction::Reword(ref new_msg) = app.entries[app.cursor].action {
+            details.push(Line::styled("  Original:", Style::default().fg(Color::DarkGray)));
+            details.push(Line::from(format!("  {}", c.message)));
+            details.push(Line::from(""));
+            details.push(Line::styled("  New message:", Style::default().fg(Color::Yellow)));
+            details.push(Line::from(format!("  {}", new_msg)));
+        } else {
+            details.push(Line::from(format!("  {}", c.message)));
+        }
+
+        details.push(Line::from(""));
+        details.push(Line::styled("  D=show diff  Enter=actions  p=preview plan", Style::default().fg(Color::Gray)));
 
         let widget = Paragraph::new(details)
             .block(
@@ -966,24 +977,84 @@ fn render_preview(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let help = match app.mode {
-        Mode::CommitList => "j/k:nav  Enter:actions  D:diff  p:preview  q:quit",
-        Mode::ActionMenu => "r:reword s:split q:squash f:fixup d:drop m:reorder e:edit x:reset  Esc:back",
-        Mode::RewordEdit => "type to edit  Tab:AI generate  Esc:save and return",
-        Mode::SplitView if app.split_editing_msg => "type message  Esc/Enter:done",
-        Mode::SplitView => "j/k:nav  space:toggle  1-9:assign  g:new group  n:name group  Enter:done",
-        Mode::SquashTarget => "j/k:select target  Enter:confirm  Esc:cancel",
-        Mode::ReorderMode => "J/K:move commit  j/k:nav  Esc/Enter:done",
-        Mode::Preview => "y/Enter:execute  j/k:scroll  Esc:back",
+        Mode::CommitList => vec![
+            ("j/k", "nav"),
+            ("Enter", "actions"),
+            ("D", "diff"),
+            ("p", "preview"),
+            ("q", "quit"),
+        ],
+        Mode::ActionMenu => vec![
+            ("r", "reword"),
+            ("s", "split"),
+            ("q", "squash"),
+            ("f", "fixup"),
+            ("d", "drop"),
+            ("m", "reorder"),
+            ("e", "edit"),
+            ("x", "reset"),
+            ("Esc", "back"),
+        ],
+        Mode::RewordEdit => vec![
+            ("Tab", "AI generate"),
+            ("Esc", "save & exit"),
+        ],
+        Mode::SplitView if app.split_editing_msg => vec![
+            ("Esc/Enter", "done"),
+        ],
+        Mode::SplitView => vec![
+            ("j/k", "nav"),
+            ("space", "toggle"),
+            ("1-9", "assign"),
+            ("g", "new group"),
+            ("n", "name"),
+            ("Enter", "done"),
+        ],
+        Mode::SquashTarget => vec![
+            ("j/k", "select"),
+            ("Enter", "confirm"),
+            ("Esc", "cancel"),
+        ],
+        Mode::ReorderMode => vec![
+            ("J/K", "move"),
+            ("j/k", "nav"),
+            ("Esc/Enter", "done"),
+        ],
+        Mode::Preview => vec![
+            ("y/Enter", "execute"),
+            ("j/k", "scroll"),
+            ("Esc", "back"),
+        ],
     };
 
-    let status_text = if app.status.is_empty() {
-        help.to_string()
+    let help_spans: Vec<Span> = help
+        .iter()
+        .enumerate()
+        .flat_map(|(i, (key, desc))| {
+            let mut spans = vec![
+                Span::styled(*key, Style::default().fg(Color::Cyan)),
+                Span::styled(":", Style::default().fg(Color::Gray)),
+                Span::styled(*desc, Style::default().fg(Color::White)),
+            ];
+            if i < help.len() - 1 {
+                spans.push(Span::styled("  ", Style::default()));
+            }
+            spans
+        })
+        .collect();
+
+    let footer_line = if app.status.is_empty() {
+        Line::from(help_spans)
     } else {
-        format!("{} | {}", app.status, help)
+        let mut all_spans = vec![
+            Span::styled(&app.status, Style::default().fg(Color::Yellow)),
+            Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+        ];
+        all_spans.extend(help_spans);
+        Line::from(all_spans)
     };
 
-    let footer = Paragraph::new(format!(" {}", status_text))
-        .style(Style::default().fg(Color::DarkGray))
+    let footer = Paragraph::new(footer_line)
         .block(Block::default().borders(Borders::ALL));
 
     f.render_widget(footer, area);
