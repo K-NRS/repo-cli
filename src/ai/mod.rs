@@ -3,4 +3,4 @@ mod claude;
 mod codex;
 mod gemini;
 
-pub use provider::{AiProvider, detect_provider, generate_commit_message};
+pub use provider::{AiProvider, detect_provider, generate_commit_message, strip_code_blocks};

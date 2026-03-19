@@ -36,10 +36,26 @@ pub struct Config {
     /// Style for commit message display: box, double_line, title_box, gutter
     #[serde(default)]
     pub message_box_style: MessageBoxStyle,
+
+    /// Default AI provider for explore features
+    #[serde(default)]
+    pub ai_provider: Option<String>,
+
+    /// Default AI model for explore features
+    #[serde(default)]
+    pub ai_model: Option<String>,
+
+    /// Days before a branch is considered stale (default: 30)
+    #[serde(default = "default_stale_days")]
+    pub stale_branch_days: u64,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_stale_days() -> u64 {
+    30
 }
 
 impl Default for Config {
@@ -50,6 +66,9 @@ impl Default for Config {
             commit_style: None,
             auto_fetch: false,
             message_box_style: MessageBoxStyle::default(),
+            ai_provider: None,
+            ai_model: None,
+            stale_branch_days: 30,
         }
     }
 }

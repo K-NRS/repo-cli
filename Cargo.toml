@@ -1,6 +1,6 @@
 [package]
 name = "repo-cli"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "A minimal git summary for your terminal"
 authors = ["K-NRS"]
@@ -28,3 +28,4 @@ indicatif = "0.17"
 flate2 = "1"
 zip = "2"
 tar = "0.4"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }

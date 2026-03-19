@@ -121,3 +121,47 @@ pub fn format_relative_time(dt: &DateTime<Local>) -> String {
         format!("{}mo", duration.num_days() / 30)
     }
 }
+
+// --- Explore types ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterExpr {
+    Message(String),
+    Author(String),
+    DateRange { from: Option<DateTime<Local>>, to: Option<DateTime<Local>> },
+    Path(String),
+    DiffContent(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchTreeNode {
+    pub branch: BranchInfo,
+    pub depth: usize,
+    pub children: Vec<usize>,
+    pub parent: Option<usize>,
+    pub is_merged: bool,
+    pub is_stale: bool,
+    pub last_activity: Option<DateTime<Local>>,
+    pub unique_commits: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BranchStatus {
+    Current,
+    Merged,
+    Stale,
+    Diverged,
+    UpToDate,
+    RemoteOnly,
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchDetail {
+    pub ahead: usize,
+    pub behind: usize,
+    pub last_commit_time: Option<DateTime<Local>>,
+    pub last_commit_author: Option<String>,
+    pub tracking: Option<String>,
+    pub status: BranchStatus,
+    pub is_merged: bool,
+}

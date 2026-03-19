@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 
 use repo_cli::config::Config;
 use repo_cli::git::{fetch_all_remotes, gather_summary, open_repo, print_fetch_warnings};
-use repo_cli::render::{render_static, run_tui};
+use repo_cli::render::render_static;
 use repo_cli::terminal::{restore_title, set_title, repo_display_name};
 
 #[derive(Parser, Debug)]
@@ -151,6 +151,28 @@ enum Command {
         #[arg(long)]
         last: Option<usize>,
     },
+
+    /// Explore repository history and branches interactively
+    Explore {
+        /// Start on a specific tab: history, branches
+        #[arg(value_name = "TAB")]
+        tab: Option<String>,
+
+        /// Number of commits to load per page
+        #[arg(long, default_value = "50")]
+        page_size: usize,
+    },
+
+    /// Quick explore (alias for `explore`)
+    E {
+        /// Start on a specific tab: history, branches
+        #[arg(value_name = "TAB")]
+        tab: Option<String>,
+
+        /// Number of commits to load per page
+        #[arg(long, default_value = "50")]
+        page_size: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -166,6 +188,7 @@ fn main() -> Result<()> {
         Some(Command::Sync { .. }) | Some(Command::S { .. }) => "sync",
         Some(Command::Reword { .. }) => "reword",
         Some(Command::Craft { .. }) => "craft",
+        Some(Command::Explore { .. }) | Some(Command::E { .. }) => "explore",
         None => "",
     };
 
@@ -201,6 +224,10 @@ fn main() -> Result<()> {
         Some(Command::Craft { count, last }) => {
             run_craft_command(count, last, cli.path)
         }
+        Some(Command::Explore { tab, page_size })
+        | Some(Command::E { tab, page_size }) => {
+            run_explore_command(tab, page_size, cli.path)
+        }
         None => run_summary_command(&cli),
     };
 
@@ -233,7 +260,8 @@ fn run_summary_command(cli: &Cli) -> Result<()> {
     let summary = gather_summary(&mut repo, cli.commits)?;
 
     if cli.interactive {
-        run_tui(summary)?;
+        use repo_cli::explore;
+        explore::run_explore(repo, summary, Some("summary".to_string()), 50, &config)?;
     } else {
         render_static(&summary, cli.graph, !cli.no_color, cli.stashes);
     }
@@ -434,4 +462,18 @@ fn run_craft_command(count: usize, last: Option<usize>, path: Option<String>) ->
     };
 
     run_craft(&repo, CraftArgs { count, last })
+}
+
+fn run_explore_command(tab: Option<String>, page_size: usize, path: Option<String>) -> Result<()> {
+    use repo_cli::explore;
+
+    let mut repo = match &path {
+        Some(p) => open_repo(Some(std::path::Path::new(p)))?,
+        None => open_repo(None)?,
+    };
+
+    let config = Config::load().unwrap_or_default();
+    let summary = gather_summary(&mut repo, 5)?;
+
+    explore::run_explore(repo, summary, tab, page_size, &config)
 }
