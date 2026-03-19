@@ -8,6 +8,7 @@ pub mod update;
 pub mod release;
 pub mod reword;
 pub mod craft;
+pub mod terminal;
 
 pub use git::gather_summary;
 pub use models::RepoSummary;

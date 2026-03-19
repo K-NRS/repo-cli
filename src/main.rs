@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use repo_cli::config::Config;
 use repo_cli::git::{fetch_all_remotes, gather_summary, open_repo, print_fetch_warnings};
 use repo_cli::render::{render_static, run_tui};
+use repo_cli::terminal::{restore_title, set_title, repo_display_name};
 
 #[derive(Parser, Debug)]
 #[command(name = "repo")]
@@ -155,7 +156,34 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
+    // Set terminal title based on command
+    let subtitle = match &cli.command {
+        Some(Command::Commit { .. }) | Some(Command::C { .. }) | Some(Command::Ic { .. }) => "commit",
+        Some(Command::Update { .. }) => "update",
+        Some(Command::Release { .. }) => "release",
+        Some(Command::Stars) => "stars",
+        Some(Command::Forks) => "forks",
+        Some(Command::Sync { .. }) | Some(Command::S { .. }) => "sync",
+        Some(Command::Reword { .. }) => "reword",
+        Some(Command::Craft { .. }) => "craft",
+        None => "",
+    };
+
+    // Try to get repo name for title
+    let repo_name = cli.path.as_deref()
+        .and_then(|p| open_repo(Some(std::path::Path::new(p))).ok())
+        .or_else(|| open_repo(None).ok())
+        .map(|r| repo_display_name(&r));
+
+    let title = match (&repo_name, subtitle) {
+        (Some(name), "") => format!("repo · {}", name),
+        (Some(name), sub) => format!("repo {} · {}", sub, name),
+        (None, "") => "repo".to_string(),
+        (None, sub) => format!("repo {}", sub),
+    };
+    set_title(&title);
+
+    let result = match cli.command {
         Some(Command::Commit { ai, no_interactive, amend }) => {
             run_commit_command(ai, no_interactive, amend, cli.path)
         }
@@ -174,7 +202,10 @@ fn main() -> Result<()> {
             run_craft_command(count, last, cli.path)
         }
         None => run_summary_command(&cli),
-    }
+    };
+
+    restore_title();
+    result
 }
 
 fn run_summary_command(cli: &Cli) -> Result<()> {
