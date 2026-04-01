@@ -1,16 +1,23 @@
 pub mod tui;
 
 use std::io::{self, Write};
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEventKind},
+    terminal::{self, ClearType},
+    ExecutableCommand,
+};
 use git2::Repository;
 
 use crate::ai::{detect_provider, generate_commit_message, AiProvider};
 use crate::git::{
     amend_commit, create_commit, get_amend_diff, get_last_commit_message, get_staged_diff,
     get_staged_files, get_unstaged_diff, get_unstaged_files, get_working_tree_status,
-    has_staged_changes, stage_all,
+    has_staged_changes, stage_all, stage_files,
 };
 
 use crate::config::{Config, MessageBoxStyle};
@@ -107,14 +114,14 @@ pub fn run_commit_workflow(
                 "{} {} unstaged file(s). Add to last commit? [Y/n] {}  ",
                 "?".yellow().bold(),
                 unstaged,
-                "l=list d=diff".dimmed()
+                "l=list d=diff s=select".dimmed()
             )
         } else {
             format!(
                 "{} {} unstaged file(s). Stage all? [Y/n] {}  ",
                 "?".yellow().bold(),
                 unstaged,
-                "l=list d=diff".dimmed()
+                "l=list d=diff s=select".dimmed()
             )
         };
 
@@ -123,7 +130,8 @@ pub fn run_commit_workflow(
             stage_all(&repo)?;
             println!("{} Staged {} file(s)", "✓".green(), unstaged);
         } else {
-            // Interactive prompt loop
+            let all_files = get_unstaged_files(&repo)?;
+
             loop {
                 print!("{}", prompt_msg);
                 io::stdout().flush()?;
@@ -138,23 +146,9 @@ pub fn run_commit_workflow(
                         break;
                     }
                     "l" => {
-                        // List files
-                        let files = get_unstaged_files(&repo)?;
-                        println!();
-                        for (path, file_status) in &files {
-                            let marker = match file_status {
-                                '?' => "?".yellow(),
-                                'M' => "M".cyan(),
-                                'D' => "D".red(),
-                                'R' => "R".blue(),
-                                _ => " ".normal(),
-                            };
-                            println!("  {} {}", marker, path);
-                        }
-                        println!();
+                        print_file_list(&all_files);
                     }
                     "d" => {
-                        // Show diff
                         let diff = get_unstaged_diff(&repo)?;
                         println!();
                         for line in diff.lines() {
@@ -170,9 +164,25 @@ pub fn run_commit_workflow(
                         }
                         println!();
                     }
+                    "s" => {
+                        match run_file_selector(&all_files)? {
+                            FileSelection::Selected(paths) if paths.is_empty() => {
+                                println!("  {}", "No files selected.".dimmed());
+                            }
+                            FileSelection::Selected(paths) => {
+                                let count = paths.len();
+                                stage_files(&repo, &paths)?;
+                                println!("{} Staged {} file(s):", "✓".green(), count);
+                                for p in &paths {
+                                    println!("  {}", p);
+                                }
+                                break;
+                            }
+                            FileSelection::Cancelled => {}
+                        }
+                    }
                     "n" => {
                         if amend {
-                            // For amend, 'n' means proceed without staging (edit message only)
                             break;
                         } else {
                             bail!("Cancelled.");
@@ -180,9 +190,15 @@ pub fn run_commit_workflow(
                     }
                     _ => {
                         if amend {
-                            println!("  {}", "y=stage, n=skip (edit msg only), l=list, d=diff".dimmed());
+                            println!(
+                                "  {}",
+                                "y=stage all  n=skip  l=list  d=diff  s=select files".dimmed()
+                            );
                         } else {
-                            println!("  {}", "y=stage, n=cancel, l=list, d=diff".dimmed());
+                            println!(
+                                "  {}",
+                                "y=stage all  n=cancel  l=list  d=diff  s=select files".dimmed()
+                            );
                         }
                     }
                 }
@@ -354,6 +370,215 @@ pub fn run_commit_workflow(
         }
     }
 
+    Ok(())
+}
+
+/// Print numbered file list
+fn print_file_list(files: &[(String, char)]) {
+    println!();
+    for (i, (path, file_status)) in files.iter().enumerate() {
+        let marker = match file_status {
+            '?' => "?".yellow(),
+            'M' => "M".cyan(),
+            'D' => "D".red(),
+            'R' => "R".blue(),
+            _ => " ".normal(),
+        };
+        let num = format!("{:>3}", i + 1).dimmed();
+        println!("  {} {} {}", num, marker, path);
+    }
+    println!();
+}
+
+enum FileSelection {
+    Selected(Vec<String>),
+    Cancelled,
+}
+
+/// Interactive file selector with checkboxes
+/// ↑/↓ navigate, Space toggle, a=all, n=none, Enter confirm, Esc cancel
+fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
+    use std::io::stdout;
+
+    let mut selected = vec![true; files.len()]; // all selected by default
+    let mut cursor_pos: usize = 0;
+
+    // Enter raw mode for key-by-key input
+    terminal::enable_raw_mode()?;
+
+    let result = (|| -> Result<FileSelection> {
+        let mut out = stdout();
+
+        // Draw initial list
+        draw_selector(&mut out, files, &selected, cursor_pos)?;
+
+        loop {
+            if event::poll(Duration::from_millis(100))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    match key.code {
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            if cursor_pos > 0 {
+                                cursor_pos -= 1;
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if cursor_pos + 1 < files.len() {
+                                cursor_pos += 1;
+                            }
+                        }
+                        KeyCode::Char(' ') => {
+                            selected[cursor_pos] = !selected[cursor_pos];
+                        }
+                        KeyCode::Char('a') => {
+                            selected.fill(true);
+                        }
+                        KeyCode::Char('i') => {
+                            for s in selected.iter_mut() {
+                                *s = !*s;
+                            }
+                        }
+                        KeyCode::Char('n') => {
+                            selected.fill(false);
+                        }
+                        KeyCode::Enter => {
+                            // Clear the selector lines
+                            clear_selector(&mut out, files.len())?;
+                            let paths: Vec<String> = files
+                                .iter()
+                                .zip(selected.iter())
+                                .filter(|(_, &sel)| sel)
+                                .map(|((path, _), _)| path.clone())
+                                .collect();
+                            return Ok(FileSelection::Selected(paths));
+                        }
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            clear_selector(&mut out, files.len())?;
+                            return Ok(FileSelection::Cancelled);
+                        }
+                        _ => {}
+                    }
+                    // Redraw
+                    redraw_selector(&mut out, files, &selected, cursor_pos)?;
+                }
+            }
+        }
+    })();
+
+    terminal::disable_raw_mode()?;
+    result
+}
+
+fn draw_selector(
+    out: &mut impl Write,
+    files: &[(String, char)],
+    selected: &[bool],
+    cursor_pos: usize,
+) -> Result<()> {
+    // Header
+    write!(out, "\r\n")?;
+    write!(
+        out,
+        "  {}\r\n",
+        "↑↓=move  Space=toggle  a=all  n=none  i=invert  Enter=confirm  Esc=cancel"
+            .to_string()
+            .dimmed()
+    )?;
+    // File rows
+    for (i, (path, file_status)) in files.iter().enumerate() {
+        let pointer = if i == cursor_pos { ">" } else { " " };
+        let checkbox = if selected[i] { "■" } else { "□" };
+        let marker = match file_status {
+            '?' => "?".yellow(),
+            'M' => "M".cyan(),
+            'D' => "D".red(),
+            'R' => "R".blue(),
+            _ => " ".normal(),
+        };
+        if i == cursor_pos {
+            write!(
+                out,
+                "  {} {} {} {} \r\n",
+                pointer.cyan().bold(),
+                checkbox.green().bold(),
+                marker,
+                path.bold()
+            )?;
+        } else {
+            write!(out, "  {} {} {} {}\r\n", pointer, checkbox.dimmed(), marker, path)?;
+        }
+    }
+    // Selected count
+    let count = selected.iter().filter(|&&s| s).count();
+    write!(
+        out,
+        "\r\n  {} selected\r\n",
+        format!("{}/{}", count, files.len()).cyan()
+    )?;
+    out.flush()?;
+    Ok(())
+}
+
+fn redraw_selector(
+    out: &mut impl Write,
+    files: &[(String, char)],
+    selected: &[bool],
+    cursor_pos: usize,
+) -> Result<()> {
+    // Move cursor up: header(1) + files(n) + blank(1) + count(1) = n+3 lines
+    let lines_up = files.len() + 3;
+    out.execute(cursor::MoveUp(lines_up as u16))?;
+    out.execute(terminal::Clear(ClearType::FromCursorDown))?;
+
+    // Redraw from header
+    write!(
+        out,
+        "  {}\r\n",
+        "↑↓=move  Space=toggle  a=all  n=none  i=invert  Enter=confirm  Esc=cancel"
+            .to_string()
+            .dimmed()
+    )?;
+    for (i, (path, file_status)) in files.iter().enumerate() {
+        let pointer = if i == cursor_pos { ">" } else { " " };
+        let checkbox = if selected[i] { "■" } else { "□" };
+        let marker = match file_status {
+            '?' => "?".yellow(),
+            'M' => "M".cyan(),
+            'D' => "D".red(),
+            'R' => "R".blue(),
+            _ => " ".normal(),
+        };
+        if i == cursor_pos {
+            write!(
+                out,
+                "  {} {} {} {} \r\n",
+                pointer.cyan().bold(),
+                checkbox.green().bold(),
+                marker,
+                path.bold()
+            )?;
+        } else {
+            write!(out, "  {} {} {} {}\r\n", pointer, checkbox.dimmed(), marker, path)?;
+        }
+    }
+    let count = selected.iter().filter(|&&s| s).count();
+    write!(
+        out,
+        "\r\n  {} selected\r\n",
+        format!("{}/{}", count, files.len()).cyan()
+    )?;
+    out.flush()?;
+    Ok(())
+}
+
+fn clear_selector(out: &mut impl Write, file_count: usize) -> Result<()> {
+    // Move up past: header(1) + newline(1) + files(n) + blank(1) + count(1) = n+4
+    let lines_up = file_count + 4;
+    out.execute(cursor::MoveUp(lines_up as u16))?;
+    out.execute(terminal::Clear(ClearType::FromCursorDown))?;
+    out.flush()?;
     Ok(())
 }
 

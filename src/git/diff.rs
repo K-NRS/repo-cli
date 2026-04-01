@@ -84,6 +84,31 @@ pub fn stage_all(repo: &Repository) -> Result<()> {
     index
         .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
         .context("Failed to add files to index")?;
+    write_index(&mut index)?;
+    Ok(())
+}
+
+/// Stage specific files by path
+pub fn stage_files(repo: &Repository, paths: &[String]) -> Result<()> {
+    let mut index = repo.index().context("Failed to get index")?;
+    for path in paths {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            index
+                .add_path(p)
+                .with_context(|| format!("Failed to stage: {}", path))?;
+        } else {
+            // Deleted file: stage the removal
+            index
+                .remove_path(p)
+                .with_context(|| format!("Failed to stage removal: {}", path))?;
+        }
+    }
+    write_index(&mut index)?;
+    Ok(())
+}
+
+fn write_index(index: &mut git2::Index) -> Result<()> {
     index.write().map_err(|e| {
         if e.code() == git2::ErrorCode::Locked {
             anyhow::anyhow!(
@@ -92,8 +117,7 @@ pub fn stage_all(repo: &Repository) -> Result<()> {
         } else {
             anyhow::anyhow!("Failed to write index: {}", e)
         }
-    })?;
-    Ok(())
+    })
 }
 
 /// Get list of unstaged files (modified + untracked)
