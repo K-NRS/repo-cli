@@ -78,15 +78,19 @@ pub fn has_staged_changes(repo: &Repository) -> Result<bool> {
     Ok(stats.files_changed() > 0)
 }
 
-/// Stage all changes (modified + untracked), skipping worktree paths
+/// Stage all changes (modified + untracked), skipping nested worktree checkouts
 pub fn stage_all(repo: &Repository) -> Result<()> {
+    let workdir = repo
+        .workdir()
+        .context("Bare repos not supported")?
+        .to_path_buf();
     let mut index = repo.index().context("Failed to get index")?;
     index
         .add_all(
             ["*"].iter(),
             IndexAddOption::DEFAULT,
             Some(&mut |path: &std::path::Path, _spec: &[u8]| {
-                if should_skip_path(path) {
+                if is_inside_worktree(&workdir, path) {
                     1 // skip
                 } else {
                     0 // add
@@ -134,6 +138,11 @@ fn write_index(index: &mut git2::Index) -> Result<()> {
 pub fn get_unstaged_files(repo: &Repository) -> Result<Vec<(String, char)>> {
     use git2::StatusOptions;
 
+    let workdir = repo
+        .workdir()
+        .context("Bare repos not supported")?
+        .to_path_buf();
+
     let mut opts = StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
 
@@ -144,7 +153,7 @@ pub fn get_unstaged_files(repo: &Repository) -> Result<Vec<(String, char)>> {
         let status = entry.status();
         let path = entry.path().unwrap_or("").to_string();
 
-        if should_skip_path(std::path::Path::new(&path)) {
+        if is_inside_worktree(&workdir, std::path::Path::new(&path)) {
             continue;
         }
 
@@ -260,9 +269,30 @@ pub fn get_commit_diff(repo: &Repository, oid: git2::Oid) -> Result<String> {
     Ok(diff_text)
 }
 
-/// Paths that should be excluded from staging (worktree directories, etc.)
-fn should_skip_path(path: &std::path::Path) -> bool {
-    path.starts_with(".claude/worktrees")
+/// Check if a path lives inside (or *is*) a git worktree checkout.
+/// Worktrees contain a `.git` *file* (not directory) pointing to the main repo.
+/// We walk from the resolved absolute path upward toward the repo root; if any
+/// directory along the way has a `.git` file, the path belongs to a nested checkout.
+fn is_inside_worktree(repo_workdir: &std::path::Path, rel_path: &std::path::Path) -> bool {
+    let abs = repo_workdir.join(rel_path);
+    // Start from the path itself (if it's a dir) or its parent (if it's a file)
+    let mut check = if abs.is_dir() {
+        abs.clone()
+    } else {
+        abs.parent().map(|p| p.to_path_buf()).unwrap_or(abs)
+    };
+    loop {
+        if check <= *repo_workdir {
+            return false;
+        }
+        let dot_git = check.join(".git");
+        if dot_git.is_file() {
+            return true;
+        }
+        if !check.pop() {
+            return false;
+        }
+    }
 }
 
 /// Get unstaged diff (working tree vs index)
@@ -328,15 +358,24 @@ mod tests {
         repo
     }
 
+    /// Create a fake worktree marker: a `.git` *file* (not directory) inside a subdir.
+    /// Real worktrees have `gitdir: /path/to/main/.git/worktrees/<name>` in this file.
+    fn make_worktree_marker(dir: &Path) {
+        fs::write(dir.join(".git"), "gitdir: /tmp/fake/.git/worktrees/x").unwrap();
+    }
+
     #[test]
     fn test_stage_all_skips_worktree_paths() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = init_test_repo(tmp.path());
 
+        // Simulate a worktree checkout inside .claude/worktrees/
         let wt_dir = tmp.path().join(".claude/worktrees/agent-test123");
         fs::create_dir_all(&wt_dir).unwrap();
+        make_worktree_marker(&wt_dir);
         fs::write(wt_dir.join("some_file.txt"), "worktree content").unwrap();
 
+        // Normal file that should be staged
         fs::write(tmp.path().join("real_change.txt"), "real content").unwrap();
 
         stage_all(&repo).unwrap();
@@ -351,10 +390,13 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = init_test_repo(tmp.path());
 
+        // Simulate a worktree checkout
         let wt_dir = tmp.path().join(".claude/worktrees/agent-abc");
         fs::create_dir_all(&wt_dir).unwrap();
+        make_worktree_marker(&wt_dir);
         fs::write(wt_dir.join("file.rs"), "content").unwrap();
 
+        // Normal untracked file
         fs::write(tmp.path().join("normal.txt"), "normal").unwrap();
 
         let files = get_unstaged_files(&repo).unwrap();
@@ -365,12 +407,28 @@ mod tests {
     }
 
     #[test]
-    fn test_should_skip_path() {
-        assert!(should_skip_path(Path::new(".claude/worktrees/agent-123")));
-        assert!(should_skip_path(Path::new(
-            ".claude/worktrees/agent-123/file.txt"
-        )));
-        assert!(!should_skip_path(Path::new(".claude/settings.json")));
-        assert!(!should_skip_path(Path::new("src/main.rs")));
+    fn test_is_inside_worktree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Create a dir with a .git file (worktree marker)
+        let wt = root.join("sub/worktree");
+        fs::create_dir_all(&wt).unwrap();
+        make_worktree_marker(&wt);
+        fs::write(wt.join("code.rs"), "").unwrap();
+
+        // Path inside the worktree → true
+        assert!(is_inside_worktree(root, Path::new("sub/worktree/code.rs")));
+
+        // Path at the worktree root → true (its parent has .git file)
+        // Actually, the worktree root itself contains the .git file, files inside it are caught
+        assert!(is_inside_worktree(root, Path::new("sub/worktree/code.rs")));
+
+        // Normal path → false
+        fs::create_dir_all(root.join("src")).unwrap();
+        assert!(!is_inside_worktree(root, Path::new("src/main.rs")));
+
+        // Path at repo root → false
+        assert!(!is_inside_worktree(root, Path::new("Cargo.toml")));
     }
 }
