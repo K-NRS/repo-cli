@@ -124,6 +124,38 @@ repo sync             # pull then push
 repo sync --rebase    # pull --rebase then push
 ```
 
+## Ignore Files (.repoignore)
+
+Keep files untracked without polluting `.gitignore`. Files matching these patterns are hidden from the commit workflow and never staged.
+
+**Per-repo:** create `.repoignore` in the repo root:
+
+```
+# Scratch files
+scratch.*
+*.local
+my-notes.md
+debug/
+
+# IDE workspace (personal, not shared via .gitignore)
+*.code-workspace
+```
+
+**Global:** add to `~/.config/repo/config.toml`:
+
+```toml
+ignore_files = ["*.local", "TODO.personal"]
+```
+
+Patterns from both sources are merged. Uses standard glob syntax (`*`, `**`, `?`, `[...]`). Bare filenames without `/` match at any depth (e.g. `scratch.log` also matches `src/scratch.log`).
+
+When files are hidden, the commit workflow shows:
+
+```
+  ⊘ 3 file(s) hidden by .repoignore
+? 5 unstaged file(s). Stage all? [Y/n] l=list d=diff s=select
+```
+
 ## Options
 
 ```
@@ -146,6 +178,7 @@ show_github_stats = true     # show stars/forks in header
 auto_fetch = false           # fetch remotes on every invocation
 commit_style = "concise"     # default commit message style
 message_box_style = "box"   # commit message display style (see below)
+ignore_files = ["*.local"]  # global never-stage patterns (see .repoignore)
 ```
 
 ### Message Box Styles

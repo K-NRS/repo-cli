@@ -16,11 +16,11 @@ use git2::Repository;
 use crate::ai::{detect_provider, generate_commit_message, AiProvider};
 use crate::git::{
     amend_commit, create_commit, get_amend_diff, get_last_commit_message, get_staged_diff,
-    get_staged_files, get_unstaged_diff, get_unstaged_files, get_working_tree_status,
-    has_staged_changes, stage_all, stage_files,
+    get_staged_files, get_unstaged_diff, get_unstaged_files, has_staged_changes, stage_all,
+    stage_files,
 };
 
-use crate::config::{Config, MessageBoxStyle};
+use crate::config::{build_ignore_set, Config, MessageBoxStyle};
 use crate::update;
 use tui::{run_commit_tui, CommitApp, TuiResult};
 
@@ -95,20 +95,60 @@ pub fn run_commit_workflow(
     amend: bool,
 ) -> Result<()> {
     let has_staged = has_staged_changes(&repo)?;
-    let status = get_working_tree_status(&repo)?;
-    let unstaged = status.modified + status.untracked;
+
+    // Load ignore patterns from config + .repoignore
+    let config = Config::load().unwrap_or_default();
+    let repo_root = repo
+        .workdir()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let ignore_set = build_ignore_set(&config, &repo_root);
+
+    // Filter unstaged files, separating ignored ones
+    let all_unstaged = get_unstaged_files(&repo)?;
+    let (visible_files, ignored_count) = if let Some(ref set) = ignore_set {
+        let mut visible = Vec::new();
+        let mut ignored = 0usize;
+        for (path, status) in &all_unstaged {
+            if set.is_match(path) {
+                ignored += 1;
+            } else {
+                visible.push((path.clone(), *status));
+            }
+        }
+        (visible, ignored)
+    } else {
+        (all_unstaged, 0)
+    };
+
+    let unstaged = visible_files.len();
 
     // Check if we have anything to work with
     if !has_staged && unstaged == 0 {
         if amend {
             // Amend with no changes: just edit message (handled below)
         } else {
+            if ignored_count > 0 {
+                println!(
+                    "  {} {} file(s) hidden by .repoignore",
+                    "⊘".dimmed(),
+                    ignored_count
+                );
+            }
             bail!("Nothing to commit. Working tree clean.");
         }
     }
 
     // Offer to stage unstaged files if nothing staged yet
     if !has_staged && unstaged > 0 {
+        if ignored_count > 0 {
+            println!(
+                "  {} {} file(s) hidden by .repoignore",
+                "⊘".dimmed(),
+                ignored_count
+            );
+        }
+
         let prompt_msg = if amend {
             format!(
                 "{} {} unstaged file(s). Add to last commit? [Y/n] {}  ",
@@ -127,10 +167,10 @@ pub fn run_commit_workflow(
 
         // Non-interactive: auto-stage all
         if !interactive {
-            stage_all(&repo)?;
+            stage_all(&repo, ignore_set.as_ref())?;
             println!("{} Staged {} file(s)", "✓".green(), unstaged);
         } else {
-            let all_files = get_unstaged_files(&repo)?;
+            let all_files = visible_files;
 
             loop {
                 print!("{}", prompt_msg);
@@ -141,7 +181,7 @@ pub fn run_commit_workflow(
 
                 match input.trim().to_lowercase().as_str() {
                     "" | "y" => {
-                        stage_all(&repo)?;
+                        stage_all(&repo, ignore_set.as_ref())?;
                         println!("{} Staged all changes", "✓".green());
                         break;
                     }

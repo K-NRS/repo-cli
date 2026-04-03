@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use git2::{DiffOptions, IndexAddOption, Repository};
+use globset::GlobSet;
 
 /// Get the staged diff as a string for AI consumption
 pub fn get_staged_diff(repo: &Repository) -> Result<String> {
@@ -79,7 +80,8 @@ pub fn has_staged_changes(repo: &Repository) -> Result<bool> {
 }
 
 /// Stage all changes (modified + untracked), skipping nested worktree checkouts
-pub fn stage_all(repo: &Repository) -> Result<()> {
+/// and files matching ignore patterns from .repoignore / config.
+pub fn stage_all(repo: &Repository, ignore: Option<&GlobSet>) -> Result<()> {
     let workdir = repo
         .workdir()
         .context("Bare repos not supported")?
@@ -91,10 +93,15 @@ pub fn stage_all(repo: &Repository) -> Result<()> {
             IndexAddOption::DEFAULT,
             Some(&mut |path: &std::path::Path, _spec: &[u8]| {
                 if is_inside_worktree(&workdir, path) {
-                    1 // skip
-                } else {
-                    0 // add
+                    return 1; // skip worktree files
                 }
+                if let Some(set) = ignore {
+                    let path_str = path.to_string_lossy();
+                    if set.is_match(path_str.as_ref()) {
+                        return 1; // skip ignored files
+                    }
+                }
+                0 // add
             }),
         )
         .context("Failed to add files to index")?;
@@ -378,7 +385,7 @@ mod tests {
         // Normal file that should be staged
         fs::write(tmp.path().join("real_change.txt"), "real content").unwrap();
 
-        stage_all(&repo).unwrap();
+        stage_all(&repo, None).unwrap();
 
         let staged = get_staged_files(&repo).unwrap();
         assert!(staged.contains(&"real_change.txt".to_string()));
@@ -430,5 +437,34 @@ mod tests {
 
         // Path at repo root → false
         assert!(!is_inside_worktree(root, Path::new("Cargo.toml")));
+    }
+
+    #[test]
+    fn test_stage_all_skips_ignored_files() {
+        use globset::{Glob, GlobSetBuilder};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_test_repo(tmp.path());
+
+        // Create files: one normal, one that should be ignored
+        fs::write(tmp.path().join("real.txt"), "real").unwrap();
+        fs::write(tmp.path().join("scratch.log"), "scratch").unwrap();
+        fs::write(tmp.path().join("notes.md"), "notes").unwrap();
+
+        // Build ignore set matching *.log
+        let mut builder = GlobSetBuilder::new();
+        builder.add(Glob::new("*.log").unwrap());
+        builder.add(Glob::new("**/*.log").unwrap());
+        let ignore = builder.build().unwrap();
+
+        stage_all(&repo, Some(&ignore)).unwrap();
+
+        let staged = get_staged_files(&repo).unwrap();
+        assert!(staged.contains(&"real.txt".to_string()));
+        assert!(staged.contains(&"notes.md".to_string()));
+        assert!(
+            !staged.contains(&"scratch.log".to_string()),
+            "ignored file should not be staged"
+        );
     }
 }

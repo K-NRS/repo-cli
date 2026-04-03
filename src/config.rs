@@ -1,7 +1,8 @@
 use anyhow::Result;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +49,10 @@ pub struct Config {
     /// Days before a branch is considered stale (default: 30)
     #[serde(default = "default_stale_days")]
     pub stale_branch_days: u64,
+
+    /// Glob patterns for files to never stage/commit (global)
+    #[serde(default)]
+    pub ignore_files: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -69,6 +74,7 @@ impl Default for Config {
             ai_provider: None,
             ai_model: None,
             stale_branch_days: 30,
+            ignore_files: Vec::new(),
         }
     }
 }
@@ -93,4 +99,45 @@ impl Config {
             .join("repo")
             .join("config.toml")
     }
+}
+
+/// Load per-repo `.repoignore` patterns (gitignore-style: one glob per line, # comments)
+pub fn load_repo_ignore(repo_root: &Path) -> Vec<String> {
+    let path = repo_root.join(".repoignore");
+    match fs::read_to_string(&path) {
+        Ok(content) => content
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| l.to_string())
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Build a GlobSet from merged config + .repoignore patterns.
+/// Returns None if no patterns are configured.
+pub fn build_ignore_set(config: &Config, repo_root: &Path) -> Option<GlobSet> {
+    let mut patterns = config.ignore_files.clone();
+    patterns.extend(load_repo_ignore(repo_root));
+
+    if patterns.is_empty() {
+        return None;
+    }
+
+    let mut builder = GlobSetBuilder::new();
+    for pattern in &patterns {
+        // Support both "file.txt" and "**/file.txt" style patterns
+        if let Ok(glob) = Glob::new(pattern) {
+            builder.add(glob);
+        }
+        // Also add with **/ prefix for bare filenames without path separators
+        if !pattern.contains('/') && !pattern.starts_with("**/") {
+            if let Ok(glob) = Glob::new(&format!("**/{}", pattern)) {
+                builder.add(glob);
+            }
+        }
+    }
+
+    builder.build().ok()
 }
