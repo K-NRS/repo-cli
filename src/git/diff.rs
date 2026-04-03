@@ -78,11 +78,21 @@ pub fn has_staged_changes(repo: &Repository) -> Result<bool> {
     Ok(stats.files_changed() > 0)
 }
 
-/// Stage all changes (modified + untracked)
+/// Stage all changes (modified + untracked), skipping worktree paths
 pub fn stage_all(repo: &Repository) -> Result<()> {
     let mut index = repo.index().context("Failed to get index")?;
     index
-        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+        .add_all(
+            ["*"].iter(),
+            IndexAddOption::DEFAULT,
+            Some(&mut |path: &std::path::Path, _spec: &[u8]| {
+                if should_skip_path(path) {
+                    1 // skip
+                } else {
+                    0 // add
+                }
+            }),
+        )
         .context("Failed to add files to index")?;
     write_index(&mut index)?;
     Ok(())
@@ -133,6 +143,10 @@ pub fn get_unstaged_files(repo: &Repository) -> Result<Vec<(String, char)>> {
     for entry in statuses.iter() {
         let status = entry.status();
         let path = entry.path().unwrap_or("").to_string();
+
+        if should_skip_path(std::path::Path::new(&path)) {
+            continue;
+        }
 
         if status.is_wt_new() {
             files.push((path, '?'));
@@ -246,6 +260,11 @@ pub fn get_commit_diff(repo: &Repository, oid: git2::Oid) -> Result<String> {
     Ok(diff_text)
 }
 
+/// Paths that should be excluded from staging (worktree directories, etc.)
+fn should_skip_path(path: &std::path::Path) -> bool {
+    path.starts_with(".claude/worktrees")
+}
+
 /// Get unstaged diff (working tree vs index)
 pub fn get_unstaged_diff(repo: &Repository) -> Result<String> {
     let index = repo.index().context("Failed to get index")?;
@@ -283,4 +302,75 @@ pub fn get_unstaged_diff(repo: &Repository) -> Result<String> {
     .context("Failed to print diff")?;
 
     Ok(diff_text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    fn init_test_repo(dir: &Path) -> Repository {
+        let repo = Repository::init(dir).unwrap();
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        let tree_id = {
+            let mut index = repo.index().unwrap();
+            fs::write(dir.join("init.txt"), "init").unwrap();
+            index.add_path(Path::new("init.txt")).unwrap();
+            index.write().unwrap();
+            index.write_tree().unwrap()
+        };
+        {
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        repo
+    }
+
+    #[test]
+    fn test_stage_all_skips_worktree_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_test_repo(tmp.path());
+
+        let wt_dir = tmp.path().join(".claude/worktrees/agent-test123");
+        fs::create_dir_all(&wt_dir).unwrap();
+        fs::write(wt_dir.join("some_file.txt"), "worktree content").unwrap();
+
+        fs::write(tmp.path().join("real_change.txt"), "real content").unwrap();
+
+        stage_all(&repo).unwrap();
+
+        let staged = get_staged_files(&repo).unwrap();
+        assert!(staged.contains(&"real_change.txt".to_string()));
+        assert!(!staged.iter().any(|f| f.contains(".claude/worktrees")));
+    }
+
+    #[test]
+    fn test_get_unstaged_files_skips_worktree_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_test_repo(tmp.path());
+
+        let wt_dir = tmp.path().join(".claude/worktrees/agent-abc");
+        fs::create_dir_all(&wt_dir).unwrap();
+        fs::write(wt_dir.join("file.rs"), "content").unwrap();
+
+        fs::write(tmp.path().join("normal.txt"), "normal").unwrap();
+
+        let files = get_unstaged_files(&repo).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        assert!(paths.contains(&"normal.txt"));
+        assert!(!paths.iter().any(|p| p.contains(".claude/worktrees")));
+    }
+
+    #[test]
+    fn test_should_skip_path() {
+        assert!(should_skip_path(Path::new(".claude/worktrees/agent-123")));
+        assert!(should_skip_path(Path::new(
+            ".claude/worktrees/agent-123/file.txt"
+        )));
+        assert!(!should_skip_path(Path::new(".claude/settings.json")));
+        assert!(!should_skip_path(Path::new("src/main.rs")));
+    }
 }
