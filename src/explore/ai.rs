@@ -102,12 +102,15 @@ fn detect_all_providers() -> Vec<AiProvider> {
     providers
 }
 
-pub fn run_ai_query(provider: AiProvider, prompt: &str) -> Result<String> {
+pub fn run_ai_query(provider: AiProvider, prompt: &str, model: Option<&str>) -> Result<String> {
     let result = match provider {
         AiProvider::Claude => {
-            let mut child = Command::new("claude")
-                .arg("-p")
-                .arg("--no-session-persistence")
+            let mut cmd = Command::new("claude");
+            cmd.arg("-p").arg("--no-session-persistence");
+            if let Some(m) = model {
+                cmd.arg("--model").arg(m);
+            }
+            let mut child = cmd
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -125,17 +128,26 @@ pub fn run_ai_query(provider: AiProvider, prompt: &str) -> Result<String> {
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         }
         AiProvider::Codex => {
-            let output = Command::new("codex")
-                .arg("exec")
+            let mut cmd = Command::new("codex");
+            cmd.arg("exec").arg("--full-auto").arg("--ephemeral");
+            if let Some(m) = model {
+                cmd.arg("-m").arg(m);
+            }
+            let output = cmd
                 .arg(prompt)
                 .output()?;
             if !output.status.success() {
-                anyhow::bail!("codex failed");
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("codex failed: {}", stderr.trim());
             }
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         }
         AiProvider::Gemini => {
-            let mut child = Command::new("gemini")
+            let mut cmd = Command::new("gemini");
+            if let Some(m) = model {
+                cmd.arg("--model").arg(m);
+            }
+            let mut child = cmd
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())

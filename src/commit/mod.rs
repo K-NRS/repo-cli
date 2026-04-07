@@ -91,6 +91,7 @@ fn print_message_box(message: &str, style: MessageBoxStyle) {
 pub fn run_commit_workflow(
     repo: Repository,
     cli_ai: Option<String>,
+    cli_model: Option<String>,
     interactive: bool,
     amend: bool,
 ) -> Result<()> {
@@ -260,6 +261,9 @@ pub fn run_commit_workflow(
     // Resolve AI provider: CLI flag > config > auto-detect
     let provider = resolve_provider(cli_ai, &config)?;
 
+    // Resolve model: CLI flag > config > provider default
+    let model = cli_model.or_else(|| config.commit_model.clone());
+
     // Get diff: for amend use full diff (parent → index), else just staged
     let diff = if amend {
         get_amend_diff(&repo)?
@@ -279,13 +283,15 @@ pub fn run_commit_workflow(
         );
         existing
     } else {
+        let model_display = model.as_deref().map(|m| format!("/{}", m)).unwrap_or_default();
         println!(
-            "{} Generating commit message with {}...",
+            "{} Generating commit message with {}{}...",
             "●".cyan(),
-            provider.name().bold()
+            provider.name().bold(),
+            model_display.dimmed()
         );
         let style = config.commit_style.as_deref();
-        generate_commit_message(provider, &diff, style)?
+        generate_commit_message(provider, &diff, style, model.as_deref())?
     };
 
     let action_word = if amend { "Amended" } else { "Committed" };
@@ -383,7 +389,7 @@ pub fn run_commit_workflow(
                 };
 
                 println!("{} Regenerating...", "●".cyan());
-                message = generate_commit_message(provider, &diff, style)?;
+                message = generate_commit_message(provider, &diff, style, model.as_deref())?;
             }
             "d" => {
                 if diff.is_empty() {

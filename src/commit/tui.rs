@@ -80,7 +80,7 @@ impl CommitApp {
             }
             KeyCode::Char('r') => {
                 self.status = "Regenerating...".to_string();
-                match generate_commit_message(self.provider, &self.diff, None) {
+                match generate_commit_message(self.provider, &self.diff, None, None) {
                     Ok(msg) => {
                         self.message = msg;
                         self.cursor_pos = self.message.len();

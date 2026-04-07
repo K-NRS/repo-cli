@@ -789,7 +789,8 @@ fn execute_ai_action(app: &mut ExploreApp, action: &str, repo: &Repository) {
     app.status_message = format!("AI thinking ({})...", provider.name());
 
     let prompt = super::ai::build_prompt(action, &context);
-    match super::ai::run_ai_query(provider, &prompt) {
+    let model = app.ai.model.as_deref();
+    match super::ai::run_ai_query(provider, &prompt, model) {
         Ok(result) => {
             // Cache the result
             let cache_key = match action {

@@ -210,7 +210,7 @@ pub fn strip_code_blocks(text: &str) -> String {
 }
 
 /// Generate commit message using the specified provider
-pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&str>) -> Result<String> {
+pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&str>, model: Option<&str>) -> Result<String> {
     if diff.is_empty() {
         bail!("No staged changes to generate commit message for");
     }
@@ -218,9 +218,9 @@ pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&
     let diff = truncate_diff(diff);
 
     let message = match provider {
-        AiProvider::Claude => claude::generate(&diff, style),
-        AiProvider::Codex => codex::generate(&diff, style),
-        AiProvider::Gemini => gemini::generate(&diff, style),
+        AiProvider::Claude => claude::generate(&diff, style, model),
+        AiProvider::Codex => codex::generate(&diff, style, model),
+        AiProvider::Gemini => gemini::generate(&diff, style, model),
     }?;
 
     Ok(strip_code_blocks(&message))

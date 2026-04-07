@@ -46,6 +46,10 @@ pub struct Config {
     #[serde(default)]
     pub ai_model: Option<String>,
 
+    /// Default AI model for commit message generation
+    #[serde(default)]
+    pub commit_model: Option<String>,
+
     /// Days before a branch is considered stale (default: 30)
     #[serde(default = "default_stale_days")]
     pub stale_branch_days: u64,
@@ -73,6 +77,7 @@ impl Default for Config {
             message_box_style: MessageBoxStyle::default(),
             ai_provider: None,
             ai_model: None,
+            commit_model: None,
             stale_branch_days: 30,
             ignore_files: Vec::new(),
         }

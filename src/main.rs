@@ -54,6 +54,10 @@ enum Command {
         #[arg(long)]
         ai: Option<String>,
 
+        /// AI model override (passed to the provider CLI)
+        #[arg(short, long)]
+        model: Option<String>,
+
         /// Commit directly without interactive TUI
         #[arg(short = 'y', long)]
         no_interactive: bool,
@@ -69,6 +73,10 @@ enum Command {
         #[arg(long)]
         ai: Option<String>,
 
+        /// AI model override (passed to the provider CLI)
+        #[arg(short, long)]
+        model: Option<String>,
+
         /// Amend the last commit instead of creating a new one
         #[arg(long)]
         amend: bool,
@@ -79,6 +87,10 @@ enum Command {
         /// AI provider to use (claude, codex, gemini)
         #[arg(long)]
         ai: Option<String>,
+
+        /// AI model override (passed to the provider CLI)
+        #[arg(short, long)]
+        model: Option<String>,
 
         /// Amend the last commit instead of creating a new one
         #[arg(long)]
@@ -207,11 +219,11 @@ fn main() -> Result<()> {
     set_title(&title);
 
     let result = match cli.command {
-        Some(Command::Commit { ai, no_interactive, amend }) => {
-            run_commit_command(ai, no_interactive, amend, cli.path)
+        Some(Command::Commit { ai, model, no_interactive, amend }) => {
+            run_commit_command(ai, model, no_interactive, amend, cli.path)
         }
-        Some(Command::C { ai, amend }) => run_commit_command(ai, true, amend, cli.path),
-        Some(Command::Ic { ai, amend }) => run_commit_command(ai, false, amend, cli.path),
+        Some(Command::C { ai, model, amend }) => run_commit_command(ai, model, true, amend, cli.path),
+        Some(Command::Ic { ai, model, amend }) => run_commit_command(ai, model, false, amend, cli.path),
         Some(Command::Update { check }) => run_update_command(check),
         Some(Command::Release { version, draft }) => run_release_command(&version, draft),
         Some(Command::Stars) => run_stars_command(cli.path),
@@ -269,7 +281,7 @@ fn run_summary_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn run_commit_command(ai: Option<String>, no_interactive: bool, amend: bool, path: Option<String>) -> Result<()> {
+fn run_commit_command(ai: Option<String>, model: Option<String>, no_interactive: bool, amend: bool, path: Option<String>) -> Result<()> {
     use repo_cli::commit::run_commit_workflow;
 
     let repo = match &path {
@@ -277,7 +289,7 @@ fn run_commit_command(ai: Option<String>, no_interactive: bool, amend: bool, pat
         None => open_repo(None)?,
     };
 
-    run_commit_workflow(repo, ai, !no_interactive, amend)
+    run_commit_workflow(repo, ai, model, !no_interactive, amend)
 }
 
 fn run_update_command(check_only: bool) -> Result<()> {

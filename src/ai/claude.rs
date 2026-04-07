@@ -7,16 +7,19 @@ Follow conventional commit format: type(scope): description
 Types: feat, fix, docs, style, refactor, test, chore
 Only output the commit message, nothing else."#;
 
-pub fn generate(diff: &str, style: Option<&str>) -> Result<String> {
+pub fn generate(diff: &str, style: Option<&str>, model: Option<&str>) -> Result<String> {
     let style_instruction = match style {
         Some(s) => format!("\nStyle: {}", s),
         None => "\nKeep the first line under 72 characters. Be concise.".to_string(),
     };
     let input = format!("{}{}\n\n```diff\n{}\n```", BASE_PROMPT, style_instruction, diff);
 
-    let mut child = Command::new("claude")
-        .arg("-p")
-        .arg("--no-session-persistence")
+    let mut cmd = Command::new("claude");
+    cmd.arg("-p").arg("--no-session-persistence");
+    if let Some(m) = model {
+        cmd.arg("--model").arg(m);
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

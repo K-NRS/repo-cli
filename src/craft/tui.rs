@@ -286,7 +286,7 @@ impl App {
                     Ok(diff) if !diff.is_empty() => {
                         self.ai_loading = true;
                         self.status = format!("generating with {}...", provider.name());
-                        match generate_commit_message(provider, &diff, None) {
+                        match generate_commit_message(provider, &diff, None, None) {
                             Ok(msg) => {
                                 self.reword_buffer = msg;
                                 self.reword_cursor = self.reword_buffer.len();
