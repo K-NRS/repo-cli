@@ -15,9 +15,10 @@ pub fn generate(diff: &str, style: Option<&str>) -> Result<String> {
     let input = format!("{}{}\n\n```diff\n{}\n```", BASE_PROMPT, style_instruction, diff);
 
     let mut child = Command::new("codex")
-        .arg("-q")
+        .arg("exec")
         .arg("-c")
         .arg("history.persistence=none")
+        .arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

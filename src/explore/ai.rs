@@ -126,7 +126,7 @@ pub fn run_ai_query(provider: AiProvider, prompt: &str) -> Result<String> {
         }
         AiProvider::Codex => {
             let output = Command::new("codex")
-                .arg("-q")
+                .arg("exec")
                 .arg(prompt)
                 .output()?;
             if !output.status.success() {
