@@ -124,6 +124,97 @@ repo sync             # pull then push
 repo sync --rebase    # pull --rebase then push
 ```
 
+## Feed (multi-repo)
+
+One command, whole folder. Scan a directory (or a saved group) and get a status card for every git repo — dirty state, ahead/behind, last commit, last activity — sorted by most recent first.
+
+```bash
+repo feed ~/Developer/PROJECTS           # scan a directory
+repo feed <alias>                        # run a saved group
+repo feed <target> -i                    # interactive TUI (Feed + Dashboard tabs)
+repo feed <target> --filter "status:dirty"
+repo feed                                # no target → open group picker
+```
+
+**Static output:**
+```
+▣ ~/Developer/PROJECTS · 173 repos
+
+   ● repo-cli            master         3m 9?          2d  feat(ai): add model selection...
+   ● servel              master         2m 2?   14↑    19h  chore: bump src submodule...
+   ● werewolf-game-app   main           clean          20h  feat: overhaul betting panel UX...
+   ● aktar.io            master         clean          1mo feat: add OpenReplay tracking...
+```
+
+Dot color: green = clean, yellow = dirty, dim = stale.
+
+### Filters
+
+Compose filters space-separated. Bare terms become full-text.
+
+| Prefix | Example | Matches |
+|---|---|---|
+| `msg:` | `msg:refactor` | commit message |
+| `author:` | `author:keren` | commit author |
+| `date:` | `date:2026-01-01..2026-03-01` | commit date range |
+| `repo:` | `repo:cli` | repo name substring |
+| `status:` | `status:dirty` | `dirty` / `clean` / `ahead` / `behind` / `stale` |
+| `text:` | `text:jwt` | full-text across repo name + branch + commit messages |
+
+```bash
+repo feed projects --filter "status:dirty author:keren text:refactor"
+```
+
+### TUI (`-i`)
+
+Two tabs: **Feed** (chronological cross-repo commit stream) and **Dashboard** (repo cards list). Live filter bar — type `/` to edit, applies on Enter.
+
+**Keys:**
+- `Tab` — switch Feed/Dashboard
+- `/` — edit filter  ·  `x` — clear filter
+- `j/k` — navigate  ·  `g/G` — top/bottom
+- `q` — quit
+
+## Groups
+
+Save named sets of repos so you don't retype paths.
+
+```bash
+repo groups              # list saved groups
+repo groups new          # interactive picker
+repo groups new --root ~/Developer/PROJECTS
+repo groups edit <alias>
+repo groups rm <alias>
+repo groups show <alias> # dump TOML
+```
+
+**Picker flow:**
+1. Enter scan root (e.g. `~/Developer/PROJECTS`)
+2. Fuzzy-search + multi-select repos (`Space` toggle, `^A` all, `^N` none)
+3. Enter alias → saved
+
+**Keys (picker):**
+- `Space` — toggle repo
+- `Tab` / `Shift+Tab` — select all / none (filtered)
+- `Enter` — advance step  ·  `Esc` — go back
+- Type to search
+
+### Groups config
+
+`~/.config/repo/groups.toml` — hybrid storage: scan root plus explicit pinned/unpinned overrides.
+
+```toml
+[[group]]
+alias = "projects"
+scan_root = "~/Developer/PROJECTS"
+max_depth = 3
+exclude = ["archive/*", "experiments/*"]
+pinned = ["~/work/special-repo"]     # extra repos outside scan_root
+unpinned = ["~/Developer/PROJECTS/legacy"]  # exclude specific scan results
+```
+
+Written automatically by `repo groups new` — edit by hand or re-run `repo groups edit <alias>`.
+
 ## Ignore Files (.repoignore)
 
 Keep files untracked without polluting `.gitignore`. Files matching these patterns are hidden from the commit workflow and never staged.

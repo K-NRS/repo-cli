@@ -10,6 +10,7 @@ pub mod reword;
 pub mod craft;
 pub mod terminal;
 pub mod explore;
+pub mod workspace;
 
 pub use git::gather_summary;
 pub use models::RepoSummary;
