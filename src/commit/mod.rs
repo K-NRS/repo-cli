@@ -159,7 +159,7 @@ pub fn run_commit_workflow(
             )
         } else {
             format!(
-                "{} {} unstaged file(s). Stage all? [Y/n] {}  ",
+                "{} {} unstaged file(s). Stage all? [y/N] {}  ",
                 "?".yellow().bold(),
                 unstaged,
                 "l=list d=diff s=select".dimmed()
@@ -180,8 +180,16 @@ pub fn run_commit_workflow(
                 let mut input = String::new();
                 io::stdin().read_line(&mut input)?;
 
-                match input.trim().to_lowercase().as_str() {
-                    "" | "y" => {
+                let raw = input.trim().to_lowercase();
+                // Default: Y for amend (keep existing behavior), N for commit (stage tracked only)
+                let choice: &str = if raw.is_empty() {
+                    if amend { "y" } else { "n" }
+                } else {
+                    raw.as_str()
+                };
+
+                match choice {
+                    "y" => {
                         stage_all(&repo, ignore_set.as_ref())?;
                         println!("{} Staged all changes", "✓".green());
                         break;
@@ -226,6 +234,31 @@ pub fn run_commit_workflow(
                         if amend {
                             break;
                         } else {
+                            let tracked: Vec<String> = all_files
+                                .iter()
+                                .filter(|(_, s)| *s != '?')
+                                .map(|(p, _)| p.clone())
+                                .collect();
+                            if tracked.is_empty() {
+                                bail!(
+                                    "No tracked changes to commit. Only untracked files present — rerun and answer 'y' to include them, or use 's' to select."
+                                );
+                            }
+                            let count = tracked.len();
+                            stage_files(&repo, &tracked)?;
+                            println!(
+                                "{} Staged {} tracked file(s) {}",
+                                "✓".green(),
+                                count,
+                                "(untracked skipped)".dimmed()
+                            );
+                            break;
+                        }
+                    }
+                    "c" | "cancel" | "q" => {
+                        if amend {
+                            break;
+                        } else {
                             bail!("Cancelled.");
                         }
                     }
@@ -238,7 +271,8 @@ pub fn run_commit_workflow(
                         } else {
                             println!(
                                 "  {}",
-                                "y=stage all  n=cancel  l=list  d=diff  s=select files".dimmed()
+                                "y=stage all  n=tracked only  c=cancel  l=list  d=diff  s=select"
+                                    .dimmed()
                             );
                         }
                     }

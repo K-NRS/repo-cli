@@ -51,8 +51,8 @@ repo commit --no-interactive # commit directly, skip review
 
 **Flow:**
 ```
-? 32 unstaged file(s). Stage all? [Y/n] l=list d=diff
-✓ Staged all changes
+? 32 unstaged file(s). Stage all? [y/N] l=list d=diff
+✓ Staged 30 tracked file(s) (untracked skipped)
 ● Generating commit message with claude...
 
 ──────────────────────────────────────────────────
@@ -244,7 +244,7 @@ When files are hidden, the commit workflow shows:
 
 ```
   ⊘ 3 file(s) hidden by .repoignore
-? 5 unstaged file(s). Stage all? [Y/n] l=list d=diff s=select
+? 5 unstaged file(s). Stage all? [y/N] l=list d=diff s=select
 ```
 
 ## Options
