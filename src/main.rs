@@ -106,12 +106,24 @@ enum Command {
 
     /// Create a GitHub release (requires gh CLI)
     Release {
-        /// Version to release (e.g., 0.1.0 or v0.1.0)
-        version: String,
+        /// Version to release (e.g., 0.1.0 or v0.1.0). Omit with --auto.
+        version: Option<String>,
 
         /// Create as draft release
         #[arg(long)]
         draft: bool,
+
+        /// Print the plan without creating the release
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Read release notes from file (skips gh --generate-notes)
+        #[arg(long, value_name = "PATH")]
+        notes_from_file: Option<String>,
+
+        /// Compute next version from conventional commits since last tag
+        #[arg(long)]
+        auto: bool,
     },
 
     /// List users who starred this repository
@@ -279,7 +291,9 @@ fn main() -> Result<()> {
         Some(Command::C { ai, model, amend }) => run_commit_command(ai, model, true, amend, cli.path),
         Some(Command::Ic { ai, model, amend }) => run_commit_command(ai, model, false, amend, cli.path),
         Some(Command::Update { check }) => run_update_command(check),
-        Some(Command::Release { version, draft }) => run_release_command(&version, draft),
+        Some(Command::Release { version, draft, dry_run, notes_from_file, auto }) => {
+            run_release_command(version, draft, dry_run, notes_from_file, auto)
+        }
         Some(Command::Stars) => run_stars_command(cli.path),
         Some(Command::Forks) => run_forks_command(cli.path),
         Some(Command::Sync { rebase }) => run_sync_command(rebase, cli.path),
@@ -379,8 +393,20 @@ fn run_update_command(check_only: bool) -> Result<()> {
     }
 }
 
-fn run_release_command(version: &str, draft: bool) -> Result<()> {
-    repo_cli::release::create_release(version, draft)
+fn run_release_command(
+    version: Option<String>,
+    draft: bool,
+    dry_run: bool,
+    notes_from_file: Option<String>,
+    auto: bool,
+) -> Result<()> {
+    repo_cli::release::create_release(repo_cli::release::ReleaseOpts {
+        version,
+        draft,
+        dry_run,
+        notes_from_file,
+        auto,
+    })
 }
 
 fn run_stars_command(path: Option<String>) -> Result<()> {

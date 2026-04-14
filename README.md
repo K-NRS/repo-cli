@@ -69,6 +69,20 @@ repo commit --no-interactive # commit directly, skip review
 - `r` - regenerate (with style options: concise/longer/shorter/detailed/custom)
 - `d` - view diff
 
+### File selector (`s` from staging prompt)
+
+When asked `Stage all? [y/N] l=list d=diff s=select`, press `s` to open an interactive picker.
+
+- `↑↓` / `j/k` — navigate  ·  `PgUp/PgDn` `Home/End` — jump
+- `Space` — toggle  ·  `a` — all  ·  `n` — none  ·  `i` — invert
+- `/` — live search (case-insensitive substring); bulk ops scope to filtered set
+- `Enter` — open confirmation preview with combined diff + per-file `+N -N`
+- `Esc` — clear filter, then cancel  ·  `q` — cancel
+
+**Session memory:** deselected files are remembered in `.git/repo-cli-deselect` and pre-unchecked next run.
+
+**Confirm screen keys:** `Enter`/`y` commit · `Esc`/`b` back · `j/k`/`PgUp`/`PgDn` scroll diff · `q` cancel.
+
 ## Update
 
 Check for updates and self-update.
@@ -77,6 +91,30 @@ Check for updates and self-update.
 repo update           # check and install latest
 repo update --check   # check only, no install
 ```
+
+## Release
+
+Create a GitHub release. Requires the `gh` CLI authenticated (`gh auth login`).
+
+```bash
+repo release 0.7.0                              # public release with auto-generated notes
+repo release 0.7.0 --draft                      # draft (publish later from GitHub)
+repo release 0.7.0 --notes-from-file CHANGES.md # custom notes
+repo release 0.7.0 --dry-run                    # print plan, don't call gh
+repo release --auto --dry-run                   # preview next version from commits
+repo release --auto                             # bump from commits and ship
+```
+
+**`--auto` bump rules** (mirrors `.github/workflows/auto-release.yml`):
+
+| Commit pattern | Bump |
+|---|---|
+| `BREAKING CHANGE:` or `<type>!:` | major |
+| `feat:` / `feat(scope):` | minor |
+| `fix:` / `perf:` / `refactor:` | patch |
+| anything else | (no release) |
+
+The repo also has a CI workflow that auto-releases on push to `master` using the same rules. Use `repo release` for drafts, out-of-band versions, or local previews — CI handles the normal cadence.
 
 ## Craft
 
