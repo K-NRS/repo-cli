@@ -341,6 +341,99 @@ pub fn get_unstaged_diff(repo: &Repository) -> Result<String> {
     Ok(diff_text)
 }
 
+/// Per-file change stats for the diff preview
+#[derive(Debug, Clone)]
+pub struct FileStat {
+    pub path: String,
+    pub status: char,
+    pub adds: usize,
+    pub dels: usize,
+}
+
+/// Get unstaged diff restricted to the given paths, plus per-file +/- counts
+pub fn get_unstaged_diff_for_paths(
+    repo: &Repository,
+    paths: &[String],
+) -> Result<(String, Vec<FileStat>)> {
+    let index = repo.index().context("Failed to get index")?;
+
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true);
+    opts.recurse_untracked_dirs(true);
+    for p in paths {
+        opts.pathspec(p);
+    }
+
+    let diff = repo
+        .diff_index_to_workdir(Some(&index), Some(&mut opts))
+        .context("Failed to create diff")?;
+
+    let mut stats: Vec<FileStat> = Vec::new();
+    for delta in diff.deltas() {
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let status = match delta.status() {
+            git2::Delta::Added => 'A',
+            git2::Delta::Deleted => 'D',
+            git2::Delta::Modified => 'M',
+            git2::Delta::Renamed => 'R',
+            git2::Delta::Copied => 'C',
+            git2::Delta::Untracked => '?',
+            git2::Delta::Typechange => 'T',
+            _ => ' ',
+        };
+        stats.push(FileStat { path, status, adds: 0, dels: 0 });
+    }
+
+    let mut diff_text = String::new();
+    let stats_ref = std::cell::RefCell::new(&mut stats);
+
+    diff.print(git2::DiffFormat::Patch, |delta, _hunk, line| {
+        let prefix = match line.origin() {
+            '+' => "+",
+            '-' => "-",
+            ' ' => " ",
+            'H' => "",
+            'F' => "",
+            'B' => "",
+            _ => "",
+        };
+
+        if !prefix.is_empty() {
+            diff_text.push_str(prefix);
+        }
+
+        if let Ok(content) = std::str::from_utf8(line.content()) {
+            diff_text.push_str(content);
+        }
+
+        if matches!(line.origin(), '+' | '-') {
+            let delta_path = delta
+                .new_file()
+                .path()
+                .or_else(|| delta.old_file().path())
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if let Some(fs) = stats_ref.borrow_mut().iter_mut().find(|f| f.path == delta_path) {
+                if line.origin() == '+' {
+                    fs.adds += 1;
+                } else {
+                    fs.dels += 1;
+                }
+            }
+        }
+
+        true
+    })
+    .context("Failed to print diff")?;
+
+    Ok((diff_text, stats))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

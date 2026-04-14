@@ -214,7 +214,7 @@ pub fn run_commit_workflow(
                         println!();
                     }
                     "s" => {
-                        match run_file_selector(&all_files)? {
+                        match run_file_selector(&all_files, repo.path(), &repo)? {
                             FileSelection::Selected(paths) if paths.is_empty() => {
                                 println!("  {}", "No files selected.".dimmed());
                             }
@@ -475,14 +475,38 @@ enum FileSelection {
     Cancelled,
 }
 
-/// Interactive file selector with checkboxes
-/// ↑/↓ navigate, Space toggle, a=all, n=none, Enter confirm, Esc cancel
-fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
+enum Stage {
+    Select,
+    Confirm,
+}
+
+/// Interactive file selector with checkboxes, live search, and confirmation preview.
+fn run_file_selector(
+    files: &[(String, char)],
+    git_dir: &std::path::Path,
+    repo: &Repository,
+) -> Result<FileSelection> {
     use std::io::stdout;
 
-    let mut selected = vec![true; files.len()]; // all selected by default
-    let mut cursor_pos: usize = 0;
+    let memory_path = git_dir.join("repo-cli-deselect");
+    let remembered = load_deselect_memory(&memory_path);
+
+    let mut selected: Vec<bool> = files
+        .iter()
+        .map(|(path, _)| !remembered.contains(path))
+        .collect();
+    let mut visible_idx: Vec<usize> = (0..files.len()).collect();
+    let mut cursor_pos: usize = 0; // index into visible_idx
     let mut offset: usize = 0;
+    let mut query = String::new();
+    let mut search_active = false;
+    let mut status_msg = String::new();
+
+    let mut stage = Stage::Select;
+    let mut confirm_scroll: u16 = 0;
+    let mut confirm_diff = String::new();
+    let mut confirm_stats: Vec<crate::git::FileStat> = Vec::new();
+    let mut confirm_paths: Vec<String> = Vec::new();
 
     terminal::enable_raw_mode()?;
     let mut out = stdout();
@@ -491,67 +515,178 @@ fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
 
     let result = (|| -> Result<FileSelection> {
         loop {
-            draw_selector(&mut out, files, &selected, cursor_pos, &mut offset)?;
+            match stage {
+                Stage::Select => draw_selector(
+                    &mut out,
+                    files,
+                    &selected,
+                    &visible_idx,
+                    cursor_pos,
+                    &mut offset,
+                    &query,
+                    search_active,
+                    &status_msg,
+                )?,
+                Stage::Confirm => draw_confirm(
+                    &mut out,
+                    &confirm_stats,
+                    &confirm_diff,
+                    confirm_scroll,
+                )?,
+            }
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind != KeyEventKind::Press {
-                        continue;
+            if !event::poll(Duration::from_millis(100))? {
+                continue;
+            }
+            let Event::Key(key) = event::read()? else { continue };
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+
+            status_msg.clear();
+
+            match stage {
+                Stage::Select if search_active => match key.code {
+                    KeyCode::Esc => {
+                        search_active = false;
+                        query.clear();
+                        visible_idx = rebuild_filter(files, &query);
+                        cursor_pos = 0;
+                        offset = 0;
                     }
-                    match key.code {
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if cursor_pos > 0 {
-                                cursor_pos -= 1;
+                    KeyCode::Enter => {
+                        search_active = false;
+                    }
+                    KeyCode::Backspace => {
+                        query.pop();
+                        visible_idx = rebuild_filter(files, &query);
+                        cursor_pos = cursor_pos.min(visible_idx.len().saturating_sub(1));
+                    }
+                    KeyCode::Char(c) => {
+                        query.push(c);
+                        visible_idx = rebuild_filter(files, &query);
+                        cursor_pos = 0;
+                        offset = 0;
+                    }
+                    _ => {}
+                },
+                Stage::Select => match key.code {
+                    KeyCode::Char('/') => {
+                        search_active = true;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        cursor_pos = cursor_pos.saturating_sub(1);
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if cursor_pos + 1 < visible_idx.len() {
+                            cursor_pos += 1;
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        let page = visible_rows()?.max(1);
+                        cursor_pos = cursor_pos.saturating_sub(page);
+                    }
+                    KeyCode::PageDown => {
+                        let page = visible_rows()?.max(1);
+                        cursor_pos =
+                            (cursor_pos + page).min(visible_idx.len().saturating_sub(1));
+                    }
+                    KeyCode::Home => {
+                        cursor_pos = 0;
+                    }
+                    KeyCode::End => {
+                        cursor_pos = visible_idx.len().saturating_sub(1);
+                    }
+                    KeyCode::Char(' ') => {
+                        if let Some(&fi) = visible_idx.get(cursor_pos) {
+                            selected[fi] = !selected[fi];
+                        }
+                    }
+                    KeyCode::Char('a') => {
+                        for &fi in &visible_idx {
+                            selected[fi] = true;
+                        }
+                    }
+                    KeyCode::Char('n') => {
+                        for &fi in &visible_idx {
+                            selected[fi] = false;
+                        }
+                    }
+                    KeyCode::Char('i') => {
+                        for &fi in &visible_idx {
+                            selected[fi] = !selected[fi];
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let paths: Vec<String> = files
+                            .iter()
+                            .zip(selected.iter())
+                            .filter(|(_, &sel)| sel)
+                            .map(|((path, _), _)| path.clone())
+                            .collect();
+                        if paths.is_empty() {
+                            status_msg = "no files selected".to_string();
+                        } else {
+                            match crate::git::get_unstaged_diff_for_paths(repo, &paths) {
+                                Ok((diff, stats)) => {
+                                    confirm_diff = diff;
+                                    confirm_stats = stats;
+                                    confirm_paths = paths;
+                                    confirm_scroll = 0;
+                                    stage = Stage::Confirm;
+                                }
+                                Err(e) => {
+                                    status_msg = format!("diff failed: {}", e);
+                                }
                             }
                         }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if cursor_pos + 1 < files.len() {
-                                cursor_pos += 1;
-                            }
-                        }
-                        KeyCode::PageUp => {
-                            let page = visible_rows()?.max(1);
-                            cursor_pos = cursor_pos.saturating_sub(page);
-                        }
-                        KeyCode::PageDown => {
-                            let page = visible_rows()?.max(1);
-                            cursor_pos = (cursor_pos + page).min(files.len().saturating_sub(1));
-                        }
-                        KeyCode::Home => {
+                    }
+                    KeyCode::Esc => {
+                        if !query.is_empty() {
+                            query.clear();
+                            visible_idx = rebuild_filter(files, &query);
                             cursor_pos = 0;
-                        }
-                        KeyCode::End => {
-                            cursor_pos = files.len().saturating_sub(1);
-                        }
-                        KeyCode::Char(' ') => {
-                            selected[cursor_pos] = !selected[cursor_pos];
-                        }
-                        KeyCode::Char('a') => {
-                            selected.fill(true);
-                        }
-                        KeyCode::Char('i') => {
-                            for s in selected.iter_mut() {
-                                *s = !*s;
-                            }
-                        }
-                        KeyCode::Char('n') => {
-                            selected.fill(false);
-                        }
-                        KeyCode::Enter => {
-                            let paths: Vec<String> = files
-                                .iter()
-                                .zip(selected.iter())
-                                .filter(|(_, &sel)| sel)
-                                .map(|((path, _), _)| path.clone())
-                                .collect();
-                            return Ok(FileSelection::Selected(paths));
-                        }
-                        KeyCode::Esc | KeyCode::Char('q') => {
+                            offset = 0;
+                        } else {
                             return Ok(FileSelection::Cancelled);
                         }
-                        _ => {}
                     }
-                }
+                    KeyCode::Char('q') => {
+                        return Ok(FileSelection::Cancelled);
+                    }
+                    _ => {}
+                },
+                Stage::Confirm => match key.code {
+                    KeyCode::Enter | KeyCode::Char('y') => {
+                        let deselected: Vec<&str> = files
+                            .iter()
+                            .zip(selected.iter())
+                            .filter(|(_, &sel)| !sel)
+                            .map(|((path, _), _)| path.as_str())
+                            .collect();
+                        let _ = save_deselect_memory(&memory_path, &deselected);
+                        return Ok(FileSelection::Selected(confirm_paths.clone()));
+                    }
+                    KeyCode::Esc | KeyCode::Char('b') => {
+                        stage = Stage::Select;
+                    }
+                    KeyCode::Char('q') => {
+                        return Ok(FileSelection::Cancelled);
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        confirm_scroll = confirm_scroll.saturating_add(1);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        confirm_scroll = confirm_scroll.saturating_sub(1);
+                    }
+                    KeyCode::PageDown => {
+                        confirm_scroll = confirm_scroll.saturating_add(10);
+                    }
+                    KeyCode::PageUp => {
+                        confirm_scroll = confirm_scroll.saturating_sub(10);
+                    }
+                    _ => {}
+                },
             }
         }
     })();
@@ -562,20 +697,58 @@ fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
     result
 }
 
+fn rebuild_filter(files: &[(String, char)], query: &str) -> Vec<usize> {
+    if query.is_empty() {
+        return (0..files.len()).collect();
+    }
+    let q = query.to_lowercase();
+    files
+        .iter()
+        .enumerate()
+        .filter(|(_, (path, _))| path.to_lowercase().contains(&q))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn load_deselect_memory(path: &std::path::Path) -> std::collections::HashSet<String> {
+    std::fs::read_to_string(path)
+        .map(|s| s.lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+fn save_deselect_memory(path: &std::path::Path, deselected: &[&str]) -> Result<()> {
+    if deselected.is_empty() {
+        let _ = std::fs::remove_file(path);
+        return Ok(());
+    }
+    let mut sorted: Vec<&&str> = deselected.iter().collect();
+    sorted.sort();
+    let content = sorted.iter().map(|s| **s).collect::<Vec<_>>().join("\n");
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
 fn visible_rows() -> Result<usize> {
     let (_, h) = terminal::size()?;
     // reserve: header(1) + blank(1) + blank(1) + count(1) = 4
     Ok((h as usize).saturating_sub(4).max(1))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_selector(
     out: &mut impl Write,
     files: &[(String, char)],
     selected: &[bool],
+    visible_idx: &[usize],
     cursor_pos: usize,
     offset: &mut usize,
+    query: &str,
+    search_active: bool,
+    status_msg: &str,
 ) -> Result<()> {
-    let visible = visible_rows()?;
+    // Reserve 2 header rows + 1 status row = 3
+    let (_, h) = terminal::size()?;
+    let visible = (h as usize).saturating_sub(3).max(1);
 
     // Adjust offset so cursor stays in view
     if cursor_pos < *offset {
@@ -583,8 +756,7 @@ fn draw_selector(
     } else if cursor_pos >= *offset + visible {
         *offset = cursor_pos + 1 - visible;
     }
-    // Clamp offset so we don't scroll past the end
-    let max_offset = files.len().saturating_sub(visible);
+    let max_offset = visible_idx.len().saturating_sub(visible);
     if *offset > max_offset {
         *offset = max_offset;
     }
@@ -592,49 +764,207 @@ fn draw_selector(
     out.execute(cursor::MoveTo(0, 0))?;
     out.execute(terminal::Clear(ClearType::All))?;
 
-    let count = selected.iter().filter(|&&s| s).count();
-    let scroll_hint = if files.len() > visible {
-        format!("  [{}–{} of {}]", *offset + 1, (*offset + visible).min(files.len()), files.len())
+    let total = files.len();
+    let selected_count = selected.iter().filter(|&&s| s).count();
+
+    // Row 1: search/filter line
+    if search_active {
+        write!(
+            out,
+            "  {} {}{}\r\n",
+            "/".cyan().bold(),
+            query,
+            "█".cyan(),
+        )?;
+    } else if !query.is_empty() {
+        write!(
+            out,
+            "  {} {}  {}\r\n",
+            "filter:".dimmed(),
+            query.cyan(),
+            format!("({} matches, Esc to clear)", visible_idx.len()).dimmed(),
+        )?;
+    } else {
+        write!(
+            out,
+            "  {}\r\n",
+            "/: search".dimmed(),
+        )?;
+    }
+
+    // Row 2: help line + counts
+    let bulk_scope = if query.is_empty() { "" } else { " (filtered)" };
+    let help = format!(
+        "jk=move  Space=toggle  a=all{0}  n=none{0}  i=invert{0}  Enter=preview  Esc=cancel",
+        bulk_scope
+    );
+    let status_tail = if !status_msg.is_empty() {
+        format!("  {}", status_msg.yellow())
+    } else if visible_idx.len() > visible {
+        format!(
+            "  [{}–{} of {}]",
+            *offset + 1,
+            (*offset + visible).min(visible_idx.len()),
+            visible_idx.len()
+        )
+        .dimmed()
+        .to_string()
     } else {
         String::new()
     };
     write!(
         out,
-        "  {} {} selected{}\r\n",
-        "↑↓/jk=move  PgUp/PgDn  Space=toggle  a=all  n=none  i=invert  Enter=confirm  Esc=cancel"
-            .to_string()
-            .dimmed(),
-        format!("{}/{}", count, files.len()).cyan(),
-        scroll_hint.dimmed(),
+        "  {}  {}{}\r\n",
+        help.dimmed(),
+        format!("{}/{}", selected_count, total).cyan(),
+        status_tail,
     )?;
 
-    let end = (*offset + visible).min(files.len());
-    for i in *offset..end {
-        let (path, file_status) = &files[i];
-        let pointer = if i == cursor_pos { ">" } else { " " };
-        let checkbox = if selected[i] { "■" } else { "□" };
-        let marker = match file_status {
-            '?' => "?".yellow(),
+    // Rows: file list (windowed)
+    if visible_idx.is_empty() {
+        write!(out, "  {}\r\n", "no matches".dimmed())?;
+    } else {
+        let end = (*offset + visible).min(visible_idx.len());
+        for row in *offset..end {
+            let fi = visible_idx[row];
+            let (path, file_status) = &files[fi];
+            let pointer = if row == cursor_pos { ">" } else { " " };
+            let checkbox = if selected[fi] { "■" } else { "□" };
+            let marker = match file_status {
+                '?' => "?".yellow(),
+                'M' => "M".cyan(),
+                'D' => "D".red(),
+                'R' => "R".blue(),
+                _ => " ".normal(),
+            };
+            if row == cursor_pos {
+                write!(
+                    out,
+                    "  {} {} {} {}\r\n",
+                    pointer.cyan().bold(),
+                    checkbox.green().bold(),
+                    marker,
+                    path.bold()
+                )?;
+            } else {
+                write!(out, "  {} {} {} {}\r\n", pointer, checkbox.dimmed(), marker, path)?;
+            }
+        }
+    }
+    out.flush()?;
+    Ok(())
+}
+
+fn draw_confirm(
+    out: &mut impl Write,
+    stats: &[crate::git::FileStat],
+    diff: &str,
+    scroll: u16,
+) -> Result<()> {
+    let (_, h) = terminal::size()?;
+    let total_h = h as usize;
+
+    out.execute(cursor::MoveTo(0, 0))?;
+    out.execute(terminal::Clear(ClearType::All))?;
+
+    // Header
+    let total_adds: usize = stats.iter().map(|s| s.adds).sum();
+    let total_dels: usize = stats.iter().map(|s| s.dels).sum();
+    write!(
+        out,
+        "  {}  {} files  {} {}\r\n",
+        "confirm commit".cyan().bold(),
+        stats.len().to_string().cyan(),
+        format!("+{}", total_adds).green(),
+        format!("-{}", total_dels).red(),
+    )?;
+
+    // File stats (cap at 8 rows)
+    let max_files = 8usize;
+    let shown_files = stats.len().min(max_files);
+    for s in stats.iter().take(shown_files) {
+        let marker = match s.status {
+            '?' | 'A' => "A".green(),
             'M' => "M".cyan(),
             'D' => "D".red(),
             'R' => "R".blue(),
             _ => " ".normal(),
         };
-        if i == cursor_pos {
-            write!(
-                out,
-                "  {} {} {} {}\r\n",
-                pointer.cyan().bold(),
-                checkbox.green().bold(),
-                marker,
-                path.bold()
-            )?;
+        write!(
+            out,
+            "  {} {:<50}  {} {}\r\n",
+            marker,
+            truncate_path(&s.path, 50),
+            format!("+{}", s.adds).green(),
+            format!("-{}", s.dels).red(),
+        )?;
+    }
+    if stats.len() > max_files {
+        write!(
+            out,
+            "  {}\r\n",
+            format!("…{} more file(s)", stats.len() - max_files).dimmed()
+        )?;
+    }
+
+    // Separator
+    write!(out, "  {}\r\n", "─── diff ───".dimmed())?;
+
+    // Diff pane
+    // Rows used so far: header(1) + shown_files + (1 if truncated) + 1 (separator) = 2 + shown_files + overflow
+    let overflow_row = if stats.len() > max_files { 1 } else { 0 };
+    let used = 2 + shown_files + overflow_row;
+    let footer = 1usize;
+    let diff_rows = total_h.saturating_sub(used + footer).max(1);
+
+    let lines: Vec<&str> = diff.lines().collect();
+    let start = (scroll as usize).min(lines.len().saturating_sub(1).max(0));
+    let end = (start + diff_rows).min(lines.len());
+    for line in &lines[start..end] {
+        if line.starts_with("+++") || line.starts_with("---") {
+            write!(out, "  {}\r\n", line.dimmed())?;
+        } else if line.starts_with('+') {
+            write!(out, "  {}\r\n", line.green())?;
+        } else if line.starts_with('-') {
+            write!(out, "  {}\r\n", line.red())?;
+        } else if line.starts_with("@@") {
+            write!(out, "  {}\r\n", line.cyan())?;
         } else {
-            write!(out, "  {} {} {} {}\r\n", pointer, checkbox.dimmed(), marker, path)?;
+            write!(out, "  {}\r\n", line)?;
         }
     }
+
+    // Footer
+    let total_lines = lines.len();
+    let scroll_hint = if total_lines > diff_rows {
+        format!(
+            " [{}–{}/{}]",
+            start + 1,
+            end.min(total_lines),
+            total_lines
+        )
+    } else {
+        String::new()
+    };
+    write!(
+        out,
+        "  {}{}\r\n",
+        "Enter/y=commit  Esc/b=back  j/k=scroll  PgUp/PgDn=page  q=cancel".dimmed(),
+        scroll_hint.dimmed(),
+    )?;
+
     out.flush()?;
     Ok(())
+}
+
+fn truncate_path(path: &str, max: usize) -> String {
+    if path.len() <= max {
+        format!("{:<width$}", path, width = max)
+    } else {
+        let keep = max.saturating_sub(1);
+        let tail = &path[path.len().saturating_sub(keep)..];
+        format!("…{}", tail)
+    }
 }
 
 fn resolve_provider(cli_ai: Option<String>, config: &Config) -> Result<AiProvider> {

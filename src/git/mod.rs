@@ -15,7 +15,8 @@ pub use status::get_working_tree_status;
 pub use stash::get_stashes;
 pub use diff::{
     get_amend_diff, get_commit_diff, get_staged_diff, get_staged_files, get_unstaged_diff,
-    get_unstaged_files, has_staged_changes, stage_all, stage_files,
+    get_unstaged_diff_for_paths, get_unstaged_files, has_staged_changes, stage_all, stage_files,
+    FileStat,
 };
 pub use commit_ops::{amend_commit, create_commit, get_author_info, get_last_commit_message};
 pub use github::{get_github_stats, get_stargazers, get_forks, GithubStats, Stargazer, Fork};
