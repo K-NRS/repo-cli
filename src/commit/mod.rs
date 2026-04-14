@@ -8,7 +8,7 @@ use colored::Colorize;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
-    terminal::{self, ClearType},
+    terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use git2::Repository;
@@ -482,17 +482,17 @@ fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
 
     let mut selected = vec![true; files.len()]; // all selected by default
     let mut cursor_pos: usize = 0;
+    let mut offset: usize = 0;
 
-    // Enter raw mode for key-by-key input
     terminal::enable_raw_mode()?;
+    let mut out = stdout();
+    out.execute(EnterAlternateScreen)?;
+    out.execute(cursor::Hide)?;
 
     let result = (|| -> Result<FileSelection> {
-        let mut out = stdout();
-
-        // Draw initial list
-        draw_selector(&mut out, files, &selected, cursor_pos)?;
-
         loop {
+            draw_selector(&mut out, files, &selected, cursor_pos, &mut offset)?;
+
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind != KeyEventKind::Press {
@@ -509,6 +509,20 @@ fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
                                 cursor_pos += 1;
                             }
                         }
+                        KeyCode::PageUp => {
+                            let page = visible_rows()?.max(1);
+                            cursor_pos = cursor_pos.saturating_sub(page);
+                        }
+                        KeyCode::PageDown => {
+                            let page = visible_rows()?.max(1);
+                            cursor_pos = (cursor_pos + page).min(files.len().saturating_sub(1));
+                        }
+                        KeyCode::Home => {
+                            cursor_pos = 0;
+                        }
+                        KeyCode::End => {
+                            cursor_pos = files.len().saturating_sub(1);
+                        }
                         KeyCode::Char(' ') => {
                             selected[cursor_pos] = !selected[cursor_pos];
                         }
@@ -524,8 +538,6 @@ fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
                             selected.fill(false);
                         }
                         KeyCode::Enter => {
-                            // Clear the selector lines
-                            clear_selector(&mut out, files.len())?;
                             let paths: Vec<String> = files
                                 .iter()
                                 .zip(selected.iter())
@@ -535,20 +547,25 @@ fn run_file_selector(files: &[(String, char)]) -> Result<FileSelection> {
                             return Ok(FileSelection::Selected(paths));
                         }
                         KeyCode::Esc | KeyCode::Char('q') => {
-                            clear_selector(&mut out, files.len())?;
                             return Ok(FileSelection::Cancelled);
                         }
                         _ => {}
                     }
-                    // Redraw
-                    redraw_selector(&mut out, files, &selected, cursor_pos)?;
                 }
             }
         }
     })();
 
+    out.execute(cursor::Show)?;
+    out.execute(LeaveAlternateScreen)?;
     terminal::disable_raw_mode()?;
     result
+}
+
+fn visible_rows() -> Result<usize> {
+    let (_, h) = terminal::size()?;
+    // reserve: header(1) + blank(1) + blank(1) + count(1) = 4
+    Ok((h as usize).saturating_sub(4).max(1))
 }
 
 fn draw_selector(
@@ -556,18 +573,44 @@ fn draw_selector(
     files: &[(String, char)],
     selected: &[bool],
     cursor_pos: usize,
+    offset: &mut usize,
 ) -> Result<()> {
-    // Header
-    write!(out, "\r\n")?;
+    let visible = visible_rows()?;
+
+    // Adjust offset so cursor stays in view
+    if cursor_pos < *offset {
+        *offset = cursor_pos;
+    } else if cursor_pos >= *offset + visible {
+        *offset = cursor_pos + 1 - visible;
+    }
+    // Clamp offset so we don't scroll past the end
+    let max_offset = files.len().saturating_sub(visible);
+    if *offset > max_offset {
+        *offset = max_offset;
+    }
+
+    out.execute(cursor::MoveTo(0, 0))?;
+    out.execute(terminal::Clear(ClearType::All))?;
+
+    let count = selected.iter().filter(|&&s| s).count();
+    let scroll_hint = if files.len() > visible {
+        format!("  [{}–{} of {}]", *offset + 1, (*offset + visible).min(files.len()), files.len())
+    } else {
+        String::new()
+    };
     write!(
         out,
-        "  {}\r\n",
-        "↑↓=move  Space=toggle  a=all  n=none  i=invert  Enter=confirm  Esc=cancel"
+        "  {} {} selected{}\r\n",
+        "↑↓/jk=move  PgUp/PgDn  Space=toggle  a=all  n=none  i=invert  Enter=confirm  Esc=cancel"
             .to_string()
-            .dimmed()
+            .dimmed(),
+        format!("{}/{}", count, files.len()).cyan(),
+        scroll_hint.dimmed(),
     )?;
-    // File rows
-    for (i, (path, file_status)) in files.iter().enumerate() {
+
+    let end = (*offset + visible).min(files.len());
+    for i in *offset..end {
+        let (path, file_status) = &files[i];
         let pointer = if i == cursor_pos { ">" } else { " " };
         let checkbox = if selected[i] { "■" } else { "□" };
         let marker = match file_status {
@@ -580,7 +623,7 @@ fn draw_selector(
         if i == cursor_pos {
             write!(
                 out,
-                "  {} {} {} {} \r\n",
+                "  {} {} {} {}\r\n",
                 pointer.cyan().bold(),
                 checkbox.green().bold(),
                 marker,
@@ -590,74 +633,6 @@ fn draw_selector(
             write!(out, "  {} {} {} {}\r\n", pointer, checkbox.dimmed(), marker, path)?;
         }
     }
-    // Selected count
-    let count = selected.iter().filter(|&&s| s).count();
-    write!(
-        out,
-        "\r\n  {} selected\r\n",
-        format!("{}/{}", count, files.len()).cyan()
-    )?;
-    out.flush()?;
-    Ok(())
-}
-
-fn redraw_selector(
-    out: &mut impl Write,
-    files: &[(String, char)],
-    selected: &[bool],
-    cursor_pos: usize,
-) -> Result<()> {
-    // Move cursor up: header(1) + files(n) + blank(1) + count(1) = n+3 lines
-    let lines_up = files.len() + 3;
-    out.execute(cursor::MoveUp(lines_up as u16))?;
-    out.execute(terminal::Clear(ClearType::FromCursorDown))?;
-
-    // Redraw from header
-    write!(
-        out,
-        "  {}\r\n",
-        "↑↓=move  Space=toggle  a=all  n=none  i=invert  Enter=confirm  Esc=cancel"
-            .to_string()
-            .dimmed()
-    )?;
-    for (i, (path, file_status)) in files.iter().enumerate() {
-        let pointer = if i == cursor_pos { ">" } else { " " };
-        let checkbox = if selected[i] { "■" } else { "□" };
-        let marker = match file_status {
-            '?' => "?".yellow(),
-            'M' => "M".cyan(),
-            'D' => "D".red(),
-            'R' => "R".blue(),
-            _ => " ".normal(),
-        };
-        if i == cursor_pos {
-            write!(
-                out,
-                "  {} {} {} {} \r\n",
-                pointer.cyan().bold(),
-                checkbox.green().bold(),
-                marker,
-                path.bold()
-            )?;
-        } else {
-            write!(out, "  {} {} {} {}\r\n", pointer, checkbox.dimmed(), marker, path)?;
-        }
-    }
-    let count = selected.iter().filter(|&&s| s).count();
-    write!(
-        out,
-        "\r\n  {} selected\r\n",
-        format!("{}/{}", count, files.len()).cyan()
-    )?;
-    out.flush()?;
-    Ok(())
-}
-
-fn clear_selector(out: &mut impl Write, file_count: usize) -> Result<()> {
-    // Move up past: header(1) + newline(1) + files(n) + blank(1) + count(1) = n+4
-    let lines_up = file_count + 4;
-    out.execute(cursor::MoveUp(lines_up as u16))?;
-    out.execute(terminal::Clear(ClearType::FromCursorDown))?;
     out.flush()?;
     Ok(())
 }
