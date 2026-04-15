@@ -279,6 +279,97 @@ pub fn run_commit_workflow(
                 }
             }
         }
+    } else if has_staged && unstaged > 0 && interactive && !amend {
+        // Staged changes exist but untracked/unstaged files remain — warn so they
+        // aren't silently omitted from the commit. Default is to proceed as-is.
+        if ignored_count > 0 {
+            println!(
+                "  {} {} file(s) hidden by .repoignore",
+                "⊘".dimmed(),
+                ignored_count
+            );
+        }
+
+        let all_files = visible_files;
+        let untracked_count = all_files.iter().filter(|(_, s)| *s == '?').count();
+        let note = if untracked_count == unstaged {
+            format!("{} untracked", unstaged)
+        } else if untracked_count > 0 {
+            format!("{} unstaged ({} untracked)", unstaged, untracked_count)
+        } else {
+            format!("{} unstaged", unstaged)
+        };
+
+        let prompt_msg = format!(
+            "{} {} file(s) not staged. Include? [y/N] {}  ",
+            "?".yellow().bold(),
+            note,
+            "s=select l=list d=diff".dimmed()
+        );
+
+        loop {
+            print!("{}", prompt_msg);
+            io::stdout().flush()?;
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            let raw = input.trim().to_lowercase();
+            let choice: &str = if raw.is_empty() { "n" } else { raw.as_str() };
+
+            match choice {
+                "y" => {
+                    stage_all(&repo, ignore_set.as_ref())?;
+                    println!("{} Staged {} additional file(s)", "✓".green(), unstaged);
+                    break;
+                }
+                "l" => {
+                    print_file_list(&all_files);
+                }
+                "d" => {
+                    let diff = get_unstaged_diff(&repo)?;
+                    println!();
+                    for line in diff.lines() {
+                        if line.starts_with('+') && !line.starts_with("+++") {
+                            println!("{}", line.green());
+                        } else if line.starts_with('-') && !line.starts_with("---") {
+                            println!("{}", line.red());
+                        } else if line.starts_with("@@") {
+                            println!("{}", line.cyan());
+                        } else {
+                            println!("{}", line);
+                        }
+                    }
+                    println!();
+                }
+                "s" => {
+                    match run_file_selector(&all_files, repo.path(), &repo)? {
+                        FileSelection::Selected(paths) if paths.is_empty() => {
+                            println!("  {}", "No files selected.".dimmed());
+                        }
+                        FileSelection::Selected(paths) => {
+                            let count = paths.len();
+                            stage_files(&repo, &paths)?;
+                            println!("{} Staged {} file(s):", "✓".green(), count);
+                            for p in &paths {
+                                println!("  {}", p);
+                            }
+                            break;
+                        }
+                        FileSelection::Cancelled => {}
+                    }
+                }
+                "n" => break,
+                "c" | "cancel" | "q" => bail!("Cancelled."),
+                _ => {
+                    println!(
+                        "  {}",
+                        "y=stage all  n=proceed with current  s=select  l=list  d=diff  c=cancel"
+                            .dimmed()
+                    );
+                }
+            }
+        }
     }
 
     // For amend mode indicator
