@@ -14,7 +14,7 @@ pub fn generate(diff: &str, style: Option<&str>, model: Option<&str>) -> Result<
     };
     let input = format!("{}{}\n\n```diff\n{}\n```", BASE_PROMPT, style_instruction, diff);
 
-    let mut cmd = Command::new("claude");
+    let mut cmd = Command::new(super::path::resolve("claude"));
     cmd.arg("-p").arg("--no-session-persistence");
     if let Some(m) = model {
         cmd.arg("--model").arg(m);

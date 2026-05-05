@@ -41,7 +41,7 @@ repo /path/to/repo
 
 ## Commit (AI-powered)
 
-Generate commit messages using AI (claude/codex/gemini).
+Generate commit messages using AI (claude/codex/gemini). Spawns the official CLIs as subprocesses — compatible with Anthropic's third-party access policy.
 
 ```bash
 repo commit                  # auto-detect AI, interactive

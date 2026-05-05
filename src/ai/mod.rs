@@ -2,5 +2,6 @@ mod provider;
 mod claude;
 mod codex;
 mod gemini;
+pub mod path;
 
 pub use provider::{AiProvider, detect_provider, generate_commit_message, strip_code_blocks};

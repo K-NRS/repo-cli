@@ -90,12 +90,7 @@ fn detect_all_providers() -> Vec<AiProvider> {
         (AiProvider::Codex, "codex"),
         (AiProvider::Gemini, "gemini"),
     ] {
-        if Command::new("which")
-            .arg(cmd)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
+        if crate::ai::path::is_available(cmd) {
             providers.push(provider);
         }
     }
@@ -105,7 +100,7 @@ fn detect_all_providers() -> Vec<AiProvider> {
 pub fn run_ai_query(provider: AiProvider, prompt: &str, model: Option<&str>) -> Result<String> {
     let result = match provider {
         AiProvider::Claude => {
-            let mut cmd = Command::new("claude");
+            let mut cmd = Command::new(crate::ai::path::resolve("claude"));
             cmd.arg("-p").arg("--no-session-persistence");
             if let Some(m) = model {
                 cmd.arg("--model").arg(m);

@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
-use std::process::Command;
 
-use super::{claude, codex, gemini};
+use super::{claude, codex, gemini, path};
 
 /// Max characters to send to AI providers
 /// Claude CLI pipe mode has strict limits; keep conservative to avoid "Prompt is too long"
@@ -51,11 +50,7 @@ pub fn detect_provider() -> Option<AiProvider> {
 }
 
 fn is_command_available(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    path::is_available(cmd)
 }
 
 /// Truncate diff to fit AI provider limits, preserving file summary context
