@@ -92,7 +92,7 @@ pub fn stage_all(repo: &Repository, ignore: Option<&GlobSet>) -> Result<()> {
             ["*"].iter(),
             IndexAddOption::DEFAULT,
             Some(&mut |path: &std::path::Path, _spec: &[u8]| {
-                if is_inside_worktree(&workdir, path) {
+                if is_inside_nested_checkout(&workdir, path) {
                     return 1; // skip worktree files
                 }
                 if let Some(set) = ignore {
@@ -160,7 +160,7 @@ pub fn get_unstaged_files(repo: &Repository) -> Result<Vec<(String, char)>> {
         let status = entry.status();
         let path = entry.path().unwrap_or("").to_string();
 
-        if is_inside_worktree(&workdir, std::path::Path::new(&path)) {
+        if is_inside_nested_checkout(&workdir, std::path::Path::new(&path)) {
             continue;
         }
 
@@ -276,11 +276,16 @@ pub fn get_commit_diff(repo: &Repository, oid: git2::Oid) -> Result<String> {
     Ok(diff_text)
 }
 
-/// Check if a path lives inside (or *is*) a git worktree checkout.
-/// Worktrees contain a `.git` *file* (not directory) pointing to the main repo.
-/// We walk from the resolved absolute path upward toward the repo root; if any
-/// directory along the way has a `.git` file, the path belongs to a nested checkout.
-fn is_inside_worktree(repo_workdir: &std::path::Path, rel_path: &std::path::Path) -> bool {
+/// Check if a path lives inside a nested git checkout — either a worktree
+/// (`.git` is a file containing `gitdir: …`) or an independent nested repo
+/// (`.git` is a directory). Both must be skipped when staging: libgit2 rejects
+/// nested repo directories with "invalid path" because they'd need to be added
+/// as submodule gitlinks, not regular paths.
+///
+/// Walks from the resolved absolute path upward toward the repo root; if any
+/// directory along the way contains a `.git` entry (file or dir), the path
+/// belongs to a nested checkout.
+fn is_inside_nested_checkout(repo_workdir: &std::path::Path, rel_path: &std::path::Path) -> bool {
     let abs = repo_workdir.join(rel_path);
     // Start from the path itself (if it's a dir) or its parent (if it's a file)
     let mut check = if abs.is_dir() {
@@ -293,7 +298,7 @@ fn is_inside_worktree(repo_workdir: &std::path::Path, rel_path: &std::path::Path
             return false;
         }
         let dot_git = check.join(".git");
-        if dot_git.is_file() {
+        if dot_git.is_file() || dot_git.is_dir() {
             return true;
         }
         if !check.pop() {
@@ -486,6 +491,28 @@ mod tests {
     }
 
     #[test]
+    fn test_stage_all_skips_nested_repos() {
+        // Reproduces "invalid path: 'admin/'" — libgit2 rejects nested repos
+        // (directories with their own `.git/`) when added via add_all.
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_test_repo(tmp.path());
+
+        // Nested standalone repo — `.git` is a directory.
+        let nested = tmp.path().join("admin");
+        fs::create_dir_all(nested.join(".git")).unwrap();
+        fs::write(nested.join("file.txt"), "nested content").unwrap();
+
+        // Plus a normal file we expect to stage.
+        fs::write(tmp.path().join("real.txt"), "real").unwrap();
+
+        stage_all(&repo, None).expect("stage_all must skip nested repos, not error");
+
+        let staged = get_staged_files(&repo).unwrap();
+        assert!(staged.contains(&"real.txt".to_string()));
+        assert!(!staged.iter().any(|f| f.starts_with("admin")));
+    }
+
+    #[test]
     fn test_get_unstaged_files_skips_worktree_paths() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = init_test_repo(tmp.path());
@@ -507,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_inside_worktree() {
+    fn test_is_inside_nested_checkout_worktree() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
 
@@ -518,18 +545,35 @@ mod tests {
         fs::write(wt.join("code.rs"), "").unwrap();
 
         // Path inside the worktree → true
-        assert!(is_inside_worktree(root, Path::new("sub/worktree/code.rs")));
-
-        // Path at the worktree root → true (its parent has .git file)
-        // Actually, the worktree root itself contains the .git file, files inside it are caught
-        assert!(is_inside_worktree(root, Path::new("sub/worktree/code.rs")));
+        assert!(is_inside_nested_checkout(
+            root,
+            Path::new("sub/worktree/code.rs")
+        ));
 
         // Normal path → false
         fs::create_dir_all(root.join("src")).unwrap();
-        assert!(!is_inside_worktree(root, Path::new("src/main.rs")));
+        assert!(!is_inside_nested_checkout(root, Path::new("src/main.rs")));
 
         // Path at repo root → false
-        assert!(!is_inside_worktree(root, Path::new("Cargo.toml")));
+        assert!(!is_inside_nested_checkout(root, Path::new("Cargo.toml")));
+    }
+
+    #[test]
+    fn test_is_inside_nested_checkout_nested_repo() {
+        // A nested standalone repo has `.git` as a *directory*, not a file.
+        // libgit2's add_all rejects it as "invalid path" — so we must skip it.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let nested = root.join("admin");
+        fs::create_dir_all(nested.join(".git")).unwrap();
+        fs::write(nested.join("README.md"), "").unwrap();
+
+        assert!(is_inside_nested_checkout(
+            root,
+            Path::new("admin/README.md")
+        ));
+        assert!(is_inside_nested_checkout(root, Path::new("admin/")));
     }
 
     #[test]
