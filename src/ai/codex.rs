@@ -2,10 +2,12 @@ use anyhow::{bail, Context, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-const BASE_PROMPT: &str = r#"Generate a git commit message for the following diff.
+const BASE_PROMPT: &str = r#"You are a git commit message generator. Generate a git commit message for the following diff.
 Follow conventional commit format: type(scope): description
 Types: feat, fix, docs, style, refactor, test, chore
-Only output the commit message, nothing else."#;
+Output ONLY the raw commit message: no preamble, no markdown fences, no explanations, no alternatives, no questions, no follow-up.
+Produce exactly ONE commit message for the entire diff; never propose splitting into multiple commits.
+The full output must be usable verbatim as a commit message."#;
 
 pub fn generate(diff: &str, style: Option<&str>, model: Option<&str>) -> Result<String> {
     let style_instruction = match style {
