@@ -204,6 +204,26 @@ pub fn strip_code_blocks(text: &str) -> String {
     }
 }
 
+/// Strip AI attribution trailers the model appends despite instructions:
+/// `Co-Authored-By`, "Generated with [Claude Code]", emoji bylines, or any line
+/// referencing `noreply@anthropic.com`. Provider-agnostic — runs on every backend.
+pub fn strip_attribution(text: &str) -> String {
+    let is_attribution = |line: &str| {
+        let l = line.trim().to_lowercase();
+        l.starts_with("co-authored-by:")
+            || l.starts_with("🤖")
+            || l.contains("noreply@anthropic.com")
+            || (l.contains("generated with") && l.contains("claude"))
+    };
+
+    text.lines()
+        .filter(|line| !is_attribution(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_end()
+        .to_string()
+}
+
 /// Generate commit message using the specified provider
 pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&str>, model: Option<&str>) -> Result<String> {
     if diff.is_empty() {
@@ -218,7 +238,7 @@ pub fn generate_commit_message(provider: AiProvider, diff: &str, style: Option<&
         AiProvider::Gemini => gemini::generate(&diff, style, model),
     }?;
 
-    Ok(strip_code_blocks(&message))
+    Ok(strip_attribution(&strip_code_blocks(&message)))
 }
 
 #[cfg(test)]
@@ -262,6 +282,38 @@ mod tests {
             strip_code_blocks("  ```\nfix(auth): handle null session\n```  "),
             "fix(auth): handle null session"
         );
+    }
+
+    #[test]
+    fn test_strip_attribution() {
+        // The reported bug: model appends a self-identifying co-author trailer.
+        assert_eq!(
+            strip_attribution(
+                "feat: rename docs\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+            ),
+            "feat: rename docs"
+        );
+        // Standard Claude Code trailer (case variant).
+        assert_eq!(
+            strip_attribution("fix: handle null\n\nCo-authored-by: Claude <noreply@anthropic.com>"),
+            "fix: handle null"
+        );
+        // "Generated with" footer + robot emoji byline.
+        assert_eq!(
+            strip_attribution(
+                "chore: bump deps\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+            ),
+            "chore: bump deps"
+        );
+        // Real body is preserved; only the trailer block is removed.
+        assert_eq!(
+            strip_attribution(
+                "feat: x\n\nWhy this matters.\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+            ),
+            "feat: x\n\nWhy this matters."
+        );
+        // No attribution: passes through untouched.
+        assert_eq!(strip_attribution("feat: x\n\nplain body"), "feat: x\n\nplain body");
     }
 
     #[test]
