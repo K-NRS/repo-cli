@@ -132,10 +132,9 @@ impl App {
                 self.selected[self.cursor] = !self.selected[self.cursor];
             }
             KeyCode::Enter => {
-                if self.selected.iter().any(|&s| s) || true {
-                    self.mode = Mode::ActionMenu;
-                    self.status = "r=reword s=split q=squash f=fixup d=drop m=reorder".into();
-                }
+                // Actions operate on the commit under the cursor, so no selection is required.
+                self.mode = Mode::ActionMenu;
+                self.status = "r=reword s=split q=squash f=fixup d=drop m=reorder".into();
             }
             KeyCode::Char('p') => {
                 // preview current plan
